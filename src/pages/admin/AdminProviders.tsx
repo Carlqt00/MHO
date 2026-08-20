@@ -52,10 +52,7 @@ export function AdminProviders() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const loadProviders = useCallback(
-    () => fetchProvidersWithAvailability().then(setProviders),
-    []
-  )
+  const loadProviders = useCallback(() => fetchProvidersWithAvailability().then(setProviders), [])
   const loadTimeOff = useCallback(() => fetchTimeOff().then(setTimeOff), [])
 
   const loadAll = useCallback(
@@ -322,7 +319,11 @@ function TimeOffSection({
     setBusy(true)
     setError('')
     try {
-      await addTimeOff({ providerId: scope || null, exceptionDate: date, reason: reason || undefined })
+      await addTimeOff({
+        providerId: scope || null,
+        exceptionDate: date,
+        reason: reason || undefined,
+      })
       setStage('added')
       await onChanged()
     } catch (e) {
@@ -366,9 +367,8 @@ function TimeOffSection({
           Exception dates
         </h3>
         <p className="mt-1 text-sm text-gray-500">
-          Days with no slots — clinic-wide holidays or a provider's leave. Remaining open slots
-          stop being bookable immediately; already-booked appointments are never deleted
-          automatically.
+          Days with no slots — clinic-wide holidays or a provider's leave. Remaining open slots stop
+          being bookable immediately; already-booked appointments are never deleted automatically.
         </p>
       </div>
 
@@ -458,8 +458,8 @@ function TimeOffSection({
             ) : (
               <>
                 <p className="mt-1 text-xs text-emerald-700">
-                  {conflicts.length} appointment{conflicts.length === 1 ? '' : 's'} still to resolve.
-                  Cancel here, or reschedule via the Reschedule feature.
+                  {conflicts.length} appointment{conflicts.length === 1 ? '' : 's'} still to
+                  resolve. Cancel here, or reschedule via the Reschedule feature.
                 </p>
                 <ConflictList conflicts={conflicts} onCancel={cancelOne} busy={busy} />
               </>
@@ -514,10 +514,7 @@ function ConflictList({
   return (
     <ul className="mt-3 divide-y divide-black/5">
       {conflicts.map((c) => (
-        <li
-          key={c.appointment_id}
-          className="flex items-center justify-between gap-3 py-2 text-sm"
-        >
+        <li key={c.appointment_id} className="flex items-center justify-between gap-3 py-2 text-sm">
           <span className="text-gray-700">
             <span className="font-medium">{c.patient_name}</span> · {c.service_name} ·{' '}
             {c.provider_name} · {formatSlotSample(c.slot_datetime)}
@@ -565,6 +562,9 @@ function SlotGenerator({
   const ready = providerId && serviceId && from && to && intervalMin >= 5
 
   const input = { providerId, serviceId, from, to, intervalMinutes: intervalMin }
+
+  const providerName = providers.find((p) => p.id === providerId)?.profiles.full_name ?? ''
+  const serviceName = services.find((s) => s.id === serviceId)?.name ?? ''
 
   const runPreview = async () => {
     setBusy(true)
@@ -705,8 +705,18 @@ function SlotGenerator({
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
         {preview && <SummaryCard title="Preview (nothing written yet)" summary={preview} />}
-        {committed && <SummaryCard title="Generated" summary={committed} success />}
       </div>
+
+      {committed && (
+        <GenerateResultModal
+          summary={committed}
+          providerName={providerName}
+          serviceName={serviceName}
+          from={from}
+          to={to}
+          onDismiss={() => setCommitted(null)}
+        />
+      )}
     </div>
   )
 }
@@ -737,9 +747,7 @@ function SummaryCard({
       </div>
       {summary.sample.length > 0 && (
         <div className="mt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-            First slots
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">First slots</p>
           <p className="mt-1 text-xs text-gray-600">
             {summary.sample.map(formatSlotSample).join(' · ')}
           </p>
@@ -757,6 +765,131 @@ function SummaryCard({
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md bg-white px-3 py-2">
+      <p className="text-lg font-bold text-gray-900">{value}</p>
+      <p className="text-xs text-gray-500">{label}</p>
+    </div>
+  )
+}
+
+// Confirmation modal shown after a real (committed) generation. Reports what
+// was actually written so a success is never mistaken for a no-op, and calls
+// out the two "zero" cases explicitly (all slots already existed = success;
+// no availability windows = fix is in provider availability, not here).
+function GenerateResultModal({
+  summary,
+  providerName,
+  serviceName,
+  from,
+  to,
+  onDismiss,
+}: {
+  summary: SlotGenSummary
+  providerName: string
+  serviceName: string
+  from: string
+  to: string
+  onDismiss: () => void
+}) {
+  const noAvailability = summary.days_with_availability === 0
+  const nothingNew = !noAvailability && summary.to_create === 0
+  const allExisted = nothingNew && summary.already_exist > 0
+  // Warn tone for the two states that need admin attention/action; ok
+  // otherwise (including "everything already existed", which is a success).
+  const tone: 'ok' | 'warn' = noAvailability || (nothingNew && !allExisted) ? 'warn' : 'ok'
+
+  let headline: string
+  if (noAvailability) {
+    headline = `Walang weekly availability si ${providerName} sa hanay na ito.`
+  } else if (allExisted) {
+    headline = 'Walang bagong slot — nakagenerate na ang lahat sa hanay na ito.'
+  } else if (nothingNew) {
+    headline = 'Walang na-generate na slot sa hanay na ito.'
+  } else {
+    headline = `${summary.to_create} bagong slot ang na-generate.`
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="genresult-title"
+    >
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+        <h3
+          id="genresult-title"
+          className={`text-base font-semibold ${
+            tone === 'warn' ? 'text-amber-800' : 'text-emerald-800'
+          }`}
+        >
+          {tone === 'warn' ? '⚠ ' : '✓ '}
+          {headline}
+        </h3>
+
+        <p className="mt-2 text-sm text-gray-500">
+          {serviceName} · {providerName}
+          <br />
+          {from} → {to}
+        </p>
+
+        {noAvailability ? (
+          <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Walang availability window ang provider na ito sa alinmang araw ng linggo sa loob ng
+            hanay na ito. Ayusin muna ang <span className="font-medium">Weekly availability</span>{' '}
+            sa itaas — nasa provider availability ang solusyon, hindi sa generator.
+            {summary.exception_days > 0 &&
+              ` (${summary.exception_days} exception day${
+                summary.exception_days === 1 ? '' : 's'
+              } din ang nilaktawan sa hanay na ito.)`}
+          </p>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+              <ModalStat label="Na-generate" value={summary.to_create} />
+              <ModalStat label="Dati nang meron (nilaktawan)" value={summary.already_exist} />
+              <ModalStat label="Araw na may availability" value={summary.days_with_availability} />
+              <ModalStat label="Exception days (holiday/leave)" value={summary.exception_days} />
+            </div>
+
+            {allExisted && (
+              <p className="mt-3 text-sm text-gray-600">
+                Idempotent ang generator kaya normal ito — hindi error. Kumpleto na ang mga slot sa
+                hanay na ito.
+              </p>
+            )}
+            {nothingNew && !allExisted && (
+              <p className="mt-3 text-sm text-amber-700">
+                May availability windows pero walang naisulat na slot — baka mas mahaba ang interval
+                kaysa sa haba ng window. Suriin ang interval at ang oras ng availability.
+              </p>
+            )}
+            {summary.sample.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Unang mga slot
+                </p>
+                <p className="mt-1 text-xs text-gray-600">
+                  {summary.sample.map(formatSlotSample).join(' · ')}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        <button
+          onClick={onDismiss}
+          className="mt-5 w-full rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+        >
+          Isara
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ModalStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-gray-200 px-3 py-2">
       <p className="text-lg font-bold text-gray-900">{value}</p>
       <p className="text-xs text-gray-500">{label}</p>
     </div>
