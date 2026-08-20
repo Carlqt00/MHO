@@ -36,7 +36,9 @@
 --   unbooked > 0       → Lipas na           (open slots existed, times passed)
 --   else               → Puno               (all booked)
 --
--- Idempotent (CREATE OR REPLACE). NOT YET APPLIED — the author runs this.
+-- Idempotent (CREATE OR REPLACE). APPLIED & VERIFIED 2026-08-20 —
+-- service_daily_slot_status exists with
+-- has_function_privilege(..., 'EXECUTE') = true for authenticated.
 -- ============================================================
 
 create or replace function public.service_daily_slot_status(
