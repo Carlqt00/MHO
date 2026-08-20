@@ -74,11 +74,13 @@ export async function fetchOpenSlots(serviceId: string, manilaDate?: string): Pr
   // time_slots 1:1.
   let query = supabase
     .from('open_slots')
-    .select(`
+    .select(
+      `
       id, slot_datetime,
       providers!inner ( id, specialization, profiles!inner ( full_name ) ),
       services!inner ( id, name )
-    `)
+    `
+    )
     .eq('service_id', serviceId)
     .gte('slot_datetime', new Date().toISOString())
 
@@ -93,26 +95,32 @@ export async function fetchOpenSlots(serviceId: string, manilaDate?: string): Pr
   return data as unknown as OpenSlot[]
 }
 
-export interface DailyAvailability {
+export interface DaySlotStatus {
   day: string // 'YYYY-MM-DD' (Asia/Manila)
-  remaining: number
+  remaining: number // unbooked AND upcoming — actually bookable now
+  unbooked: number // unbooked, any time (past + upcoming)
+  upcoming: number // any slot with slot_datetime >= now() (booked or not)
+  total: number // every non-exception slot that day (booked + unbooked)
 }
 
-// ONE aggregate query for the month calendar: remaining open slots per Manila
-// day for a service (across every provider offering it). from/to are inclusive
-// Manila dates ('YYYY-MM-DD'). Days with no row = zero remaining.
-export async function fetchServiceAvailability(
+// ONE aggregate query for the month calendar (service_daily_slot_status, 0013):
+// per-Manila-day slot counts for a service across every provider offering it.
+// from/to are inclusive Manila dates ('YYYY-MM-DD'). Days with NO non-exception
+// slot are simply absent from the result — the calendar reads that as
+// "Walang schedule". Supersedes the open-count-only service_daily_availability
+// (0011) so the calendar can tell "no schedule" / "full" / "times passed" apart.
+export async function fetchServiceSlotStatus(
   serviceId: string,
   from: string,
   to: string
-): Promise<DailyAvailability[]> {
-  const { data, error } = await supabase.rpc('service_daily_availability', {
+): Promise<DaySlotStatus[]> {
+  const { data, error } = await supabase.rpc('service_daily_slot_status', {
     p_service_id: serviceId,
     p_from: from,
     p_to: to,
   })
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
-  return (data ?? []) as DailyAvailability[]
+  return (data ?? []) as DaySlotStatus[]
 }
 
 export interface ActiveBooking {
@@ -129,10 +137,12 @@ export async function fetchMyActiveBookings(): Promise<ActiveBooking[]> {
     .not('status', 'eq', 'cancelled')
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
-  return ((data ?? []) as unknown as {
-    service_id: string
-    time_slots: { slot_datetime: string }
-  }[]).map((row) => ({
+  return (
+    (data ?? []) as unknown as {
+      service_id: string
+      time_slots: { slot_datetime: string }
+    }[]
+  ).map((row) => ({
     service_id: row.service_id,
     slot_datetime: row.time_slots.slot_datetime,
   }))
@@ -205,7 +215,8 @@ export async function fetchTodayQueue(): Promise<QueueTicket[]> {
   const { start, end } = manilaDayWindow()
   const { data, error } = await supabase
     .from('queue_tickets')
-    .select(`
+    .select(
+      `
       id, ticket_number, queue_position, status,
       appointments!inner (
         id, provider_id, status,
@@ -214,7 +225,8 @@ export async function fetchTodayQueue(): Promise<QueueTicket[]> {
         providers ( profiles ( full_name ) ),
         time_slots!inner ( slot_datetime )
       )
-    `)
+    `
+    )
     .in('status', ['waiting', 'now_serving'])
     .neq('appointments.status', 'cancelled')
     .gte('appointments.time_slots.slot_datetime', start)
@@ -415,11 +427,13 @@ export interface ProviderWithAvailability {
 export async function fetchProvidersWithAvailability(): Promise<ProviderWithAvailability[]> {
   const { data, error } = await supabase
     .from('providers')
-    .select(`
+    .select(
+      `
       id, provider_type, specialization,
       profiles!inner ( full_name ),
       provider_availability ( id, day_of_week, start_time, end_time )
-    `)
+    `
+    )
     .order('provider_type')
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
@@ -470,10 +484,12 @@ export interface TimeOff {
 export async function fetchTimeOff(): Promise<TimeOff[]> {
   const { data, error } = await supabase
     .from('provider_time_off')
-    .select(`
+    .select(
+      `
       id, provider_id, exception_date, reason,
       providers ( profiles ( full_name ) )
-    `)
+    `
+    )
     .order('exception_date')
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
@@ -663,13 +679,15 @@ export async function generateSlots(input: SlotGenInput): Promise<SlotGenSummary
 export async function fetchMyAppointments(): Promise<Appointment[]> {
   const { data, error } = await supabase
     .from('appointments')
-    .select(`
+    .select(
+      `
       id, status,
       services ( name ),
       providers ( profiles ( full_name ) ),
       time_slots ( slot_datetime ),
       queue_tickets ( ticket_number, queue_position, qr_code, status )
-    `)
+    `
+    )
     .not('status', 'eq', 'cancelled')
     .order('created_at', { ascending: false })
     .limit(20)

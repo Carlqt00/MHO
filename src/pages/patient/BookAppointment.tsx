@@ -4,13 +4,14 @@ import { DashboardLayout } from '../../components/DashboardLayout'
 import {
   fetchServices,
   fetchOpenSlots,
-  fetchServiceAvailability,
+  fetchServiceSlotStatus,
   fetchMyActiveBookings,
   bookAppointment,
   type Service,
   type OpenSlot,
   type BookingResult,
   type ActiveBooking,
+  type DaySlotStatus,
 } from '../../lib/api'
 
 function formatSlot(iso: string) {
@@ -64,6 +65,16 @@ function addMonths(m: Month, n: number): Month {
 
 const WEEKDAYS = ['Lin', 'Lun', 'Mar', 'Miy', 'Huw', 'Biy', 'Sab'] // Sunday-start
 
+// Why a date is not bookable, for the calendar label. Only called when there
+// is nothing bookable (remaining === 0); it separates the three states the old
+// single "Puno" conflated. See service_daily_slot_status (migration 0013).
+function unavailableLabel(s: DaySlotStatus | undefined): string {
+  if (!s || s.total === 0) return 'Walang schedule' // no slots exist that day
+  if (s.upcoming > 0) return 'Puno' // upcoming slots exist but all booked
+  if (s.unbooked > 0) return 'Lipas na' // open slots existed, times already passed
+  return 'Puno' // all booked (and past)
+}
+
 type Step = 1 | 2 | 3 | 4
 
 export function BookAppointment() {
@@ -86,7 +97,7 @@ export function BookAppointment() {
   const maxMonth = useMemo(() => addMonths(currentMonth, 2), [currentMonth])
 
   const [view, setView] = useState<Month>(currentMonth)
-  const [availability, setAvailability] = useState<Record<string, number>>({})
+  const [availability, setAvailability] = useState<Record<string, DaySlotStatus>>({})
   const [availLoading, setAvailLoading] = useState(false)
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -121,10 +132,10 @@ export function BookAppointment() {
       const from = `${view.year}-${pad2(view.month + 1)}-01`
       const to = `${view.year}-${pad2(view.month + 1)}-${pad2(daysInMonth(view.year, view.month))}`
       try {
-        const rows = await fetchServiceAvailability(selectedService.id, from, to)
+        const rows = await fetchServiceSlotStatus(selectedService.id, from, to)
         if (cancelled) return
-        const map: Record<string, number> = {}
-        for (const r of rows) map[r.day] = r.remaining
+        const map: Record<string, DaySlotStatus> = {}
+        for (const r of rows) map[r.day] = r
         setAvailability(map)
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
@@ -256,8 +267,8 @@ export function BookAppointment() {
                 step > i + 1
                   ? 'bg-emerald-600 text-white'
                   : step === i + 1
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-gray-100 text-gray-400'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-gray-100 text-gray-400'
               }`}
             >
               {i + 1}
@@ -362,7 +373,8 @@ export function BookAppointment() {
               const day = i + 1
               const dateStr = `${view.year}-${pad2(view.month + 1)}-${pad2(day)}`
               const isPast = dateStr < today
-              const remaining = availability[dateStr] ?? 0
+              const status = availability[dateStr]
+              const remaining = status?.remaining ?? 0
               const disabled = isPast || remaining === 0
               return (
                 <button
@@ -378,24 +390,29 @@ export function BookAppointment() {
                 >
                   <span className="text-base font-semibold">{day}</span>
                   {/* Non-color signal: available days show a count; unavailable
-                      days show an explicit "—" / "Puno" and are line-through. */}
+                      days show an explicit reason ("—" past, "Walang schedule",
+                      "Puno", or "Lipas na") and are line-through. */}
                   {availLoading ? (
                     <span className="text-[10px] text-gray-300">…</span>
                   ) : isPast ? (
                     <span className="text-[10px]">—</span>
-                  ) : remaining === 0 ? (
-                    <span className="text-[10px]">Puno</span>
-                  ) : (
+                  ) : remaining > 0 ? (
                     <span className="text-[11px]">
                       {remaining} slot{remaining === 1 ? '' : 's'}
                     </span>
+                  ) : (
+                    <span className="text-[10px] leading-tight">{unavailableLabel(status)}</span>
                   )}
                 </button>
               )
             })}
           </div>
           <p className="mt-3 text-xs text-gray-400">
-            Naka-disable (may gitling o “Puno”) ang mga araw na walang bakante o lumipas na.
+            Naka-disable ang mga araw na hindi mai-book: <span className="font-medium">“—”</span>{' '}
+            nakaraang petsa · <span className="font-medium">“Walang schedule”</span> walang oras na
+            binuksan para sa serbisyong ito · <span className="font-medium">“Puno”</span> puno na
+            ang lahat ng slot · <span className="font-medium">“Lipas na”</span> may bakante kanina
+            pero lumipas na ang oras ngayong araw.
           </p>
         </div>
       )}
