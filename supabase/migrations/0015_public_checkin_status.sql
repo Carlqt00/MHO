@@ -24,6 +24,8 @@
 --
 -- Conventions: language sql, STABLE, SECURITY DEFINER, pinned search_path,
 -- execute granted to anon + authenticated. Idempotent via CREATE OR REPLACE.
+-- APPLIED & VERIFIED 2026-08-21 — checkin_status exists with EXECUTE granted
+-- to both anon and authenticated.
 -- ============================================================
 
 create or replace function public.checkin_status(p_code text)
