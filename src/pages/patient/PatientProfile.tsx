@@ -194,8 +194,9 @@ export function PatientProfile() {
 }
 
 function CurrentBookingCard({ appt }: { appt: Appointment }) {
-  // Same source the confirmation screen uses (queue_tickets, created at booking).
-  const ticket = appt.queue_tickets[0]
+  // Same source the confirmation screen uses (queue_tickets, created at
+  // booking). It's a to-one embed, so it's a single object (or null).
+  const ticket = appt.queue_tickets
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">

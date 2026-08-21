@@ -37,12 +37,16 @@ export interface Appointment {
   services: { name: string }
   providers: { profiles: { full_name: string } }
   time_slots: { slot_datetime: string }
+  // queue_tickets.appointment_id is UNIQUE, so PostgREST treats this as a
+  // to-ONE relationship and embeds it as a single object (or null) — NOT an
+  // array. (The confirmation screen sidesteps this by reading the ticket from
+  // the book_appointment RPC return instead of an embed.)
   queue_tickets: {
     ticket_number: string
     queue_position: number
     qr_code: string
     status: string
-  }[]
+  } | null
 }
 
 export async function fetchServices(): Promise<Service[]> {

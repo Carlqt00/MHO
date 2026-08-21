@@ -87,7 +87,7 @@ export function PatientDashboard() {
       ) : (
         <div className="space-y-4">
           {appointments.map((appt) => {
-            const ticket = appt.queue_tickets[0]
+            const ticket = appt.queue_tickets
             return (
               <div
                 key={appt.id}
