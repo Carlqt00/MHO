@@ -96,6 +96,17 @@ export function DoctorSchedule() {
     }
   }, [view])
 
+  // Active = what the doctor acts on; History = finished business. The two
+  // sets are disjoint and cover every status. `appointments` is already sorted
+  // by date then time, and filtering preserves that order.
+  const { active, history } = useMemo(() => {
+    const active = appointments.filter((a) => a.status === 'booked' || a.status === 'checked_in')
+    const history = appointments.filter(
+      (a) => a.status === 'served' || a.status === 'no_show' || a.status === 'cancelled'
+    )
+    return { active, history }
+  }, [appointments])
+
   const monthLabel = new Date(view.year, view.month, 1).toLocaleDateString('en-PH', {
     month: 'long',
     year: 'numeric',
@@ -103,25 +114,23 @@ export function DoctorSchedule() {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-800">My Schedule</h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setView(addMonths(view, -1))}
-            className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            ← Prev
-          </button>
-          <span className="min-w-[9rem] text-center text-base font-semibold text-gray-800">
-            {monthLabel}
-          </span>
-          <button
-            onClick={() => setView(addMonths(view, 1))}
-            className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Next →
-          </button>
-        </div>
+      {/* One month control drives both sections. */}
+      <div className="mb-6 flex items-center justify-end gap-3">
+        <button
+          onClick={() => setView(addMonths(view, -1))}
+          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          ← Prev
+        </button>
+        <span className="min-w-[9rem] text-center text-base font-semibold text-gray-800">
+          {monthLabel}
+        </span>
+        <button
+          onClick={() => setView(addMonths(view, 1))}
+          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Next →
+        </button>
       </div>
 
       {error && (
@@ -130,9 +139,39 @@ export function DoctorSchedule() {
 
       {loading ? (
         <p className="text-gray-400">Loading…</p>
-      ) : appointments.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500">
-          Walang appointment sa buwang ito. / No appointments this month.
+      ) : (
+        <div className="space-y-8">
+          <ScheduleSection
+            title="My Schedule"
+            rows={active}
+            emptyMessage="Walang aktibong appointment sa buwang ito. / No active appointments this month."
+          />
+          <ScheduleSection
+            title="History"
+            rows={history}
+            emptyMessage="Walang natapos na appointment sa buwang ito. / No finished appointments this month."
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ScheduleSection({
+  title,
+  rows,
+  emptyMessage,
+}: {
+  title: string
+  rows: DoctorAppointment[]
+  emptyMessage: string
+}) {
+  return (
+    <section>
+      <h3 className="mb-3 text-base font-semibold text-gray-800">{title}</h3>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-gray-500">
+          {emptyMessage}
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -149,14 +188,10 @@ export function DoctorSchedule() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {appointments.map((appt) => {
-                const cancelled = appt.status === 'cancelled'
+              {rows.map((appt) => {
                 const profile = appt.patients?.profiles
                 return (
-                  <tr
-                    key={appt.id}
-                    className={cancelled ? 'text-gray-400 line-through opacity-60' : 'text-gray-700'}
-                  >
+                  <tr key={appt.id} className="text-gray-700">
                     <td className="px-3 py-2 whitespace-nowrap">
                       {formatDate(appt.time_slots.slot_datetime)}
                     </td>
@@ -170,9 +205,8 @@ export function DoctorSchedule() {
                       {appt.queue_tickets?.ticket_number ?? '—'}
                     </td>
                     <td className="px-3 py-2">
-                      {/* no-underline keeps the badge legible even on a cancelled (line-through) row */}
                       <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium no-underline ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
+                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
                       >
                         {STATUS_LABEL[appt.status] ?? appt.status}
                       </span>
@@ -184,6 +218,6 @@ export function DoctorSchedule() {
           </table>
         </div>
       )}
-    </div>
+    </section>
   )
 }
