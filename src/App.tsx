@@ -79,21 +79,73 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Parent allows the UNION of roles that can see ANY admin child
+              (admin + staff). Each child is then guarded individually — all
+              admin-only EXCEPT Reports, which staff may also view. */}
           <Route
             path="/admin"
             element={
-              <ProtectedRoute allow={['admin']}>
+              <ProtectedRoute allow={['admin', 'staff']}>
                 <AdminLayout />
               </ProtectedRoute>
             }
           >
-            <Route index element={<AdminOverview />} />
-            <Route path="users" element={<AdminUsers />} />
-            <Route path="providers" element={<AdminProviders />} />
-            <Route path="announcements" element={<AdminAnnouncements />} />
-            <Route path="notifications" element={<AdminNotifications />} />
-            <Route path="reports" element={<AdminReports />} />
-            <Route path="queue" element={<AdminQueue />} />
+            <Route
+              index
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminOverview />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="users"
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminUsers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="providers"
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminProviders />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="announcements"
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminAnnouncements />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="notifications"
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminNotifications />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="reports"
+              element={
+                <ProtectedRoute allow={['admin', 'staff']}>
+                  <AdminReports />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="queue"
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminQueue />
+                </ProtectedRoute>
+              }
+            />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

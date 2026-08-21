@@ -1,26 +1,33 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { DashboardLayout } from './DashboardLayout'
+import { useAuth } from '../hooks/useAuth'
+import type { Role } from '../lib/auth'
 
 // Sidebar sections. `end` marks the index route so it only highlights on an
-// exact match (otherwise "/admin" stays active on every child route).
-const SECTIONS: { to: string; label: string; end?: boolean }[] = [
-  { to: '/admin', label: 'Overview', end: true },
-  { to: '/admin/users', label: 'Users & Roles' },
-  { to: '/admin/providers', label: 'Providers & Slots' },
-  { to: '/admin/announcements', label: 'Announcements' },
-  { to: '/admin/notifications', label: 'Notifications' },
-  { to: '/admin/reports', label: 'Reports' },
-  { to: '/admin/queue', label: 'Live Queue' },
+// exact match (otherwise "/admin" stays active on every child route). `roles`
+// mirrors each route's guard — Reports is the only section staff may see.
+const SECTIONS: { to: string; label: string; end?: boolean; roles: Role[] }[] = [
+  { to: '/admin', label: 'Overview', end: true, roles: ['admin'] },
+  { to: '/admin/users', label: 'Users & Roles', roles: ['admin'] },
+  { to: '/admin/providers', label: 'Providers & Slots', roles: ['admin'] },
+  { to: '/admin/announcements', label: 'Announcements', roles: ['admin'] },
+  { to: '/admin/notifications', label: 'Notifications', roles: ['admin'] },
+  { to: '/admin/reports', label: 'Reports', roles: ['admin', 'staff'] },
+  { to: '/admin/queue', label: 'Live Queue', roles: ['admin'] },
 ]
 
 export function AdminLayout() {
+  const { session } = useAuth()
+  const role = session?.role
+  const sections = SECTIONS.filter((s) => role && s.roles.includes(role))
+
   return (
-    <DashboardLayout title="Administrator Dashboard">
+    <DashboardLayout title={role === 'admin' ? 'Administrator Dashboard' : 'Reports'}>
       <div className="flex flex-col gap-6 md:flex-row">
         {/* Horizontal scroll on phones, vertical sidebar on tablets/desktop */}
         <nav aria-label="Admin sections" className="md:w-52 md:shrink-0">
           <ul className="flex gap-1 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
-            {SECTIONS.map((section) => (
+            {sections.map((section) => (
               <li key={section.to} className="shrink-0 md:shrink">
                 <NavLink
                   to={section.to}

@@ -719,6 +719,83 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
 }
 
 // ------------------------------------------------------------
+// Admin/staff Reports page (migration 0017 aggregate RPCs)
+// ------------------------------------------------------------
+export interface AppointmentSummary {
+  booked: number
+  checked_in: number
+  served: number
+  no_show: number
+  cancelled: number
+  total: number
+}
+
+const EMPTY_SUMMARY: AppointmentSummary = {
+  booked: 0,
+  checked_in: 0,
+  served: 0,
+  no_show: 0,
+  cancelled: 0,
+  total: 0,
+}
+
+// Per-status counts + total for the range. 0012's volume RPCs collapse
+// checked_in+served into "attended", so they can't produce this split — hence
+// a dedicated RPC. The Rates report derives from THIS same object (no second
+// query path), and both feed the export.
+export async function fetchAppointmentSummary(
+  from: string,
+  to: string
+): Promise<AppointmentSummary> {
+  const { data, error } = await supabase.rpc('report_appointment_summary', {
+    p_from: from,
+    p_to: to,
+  })
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return ((data as AppointmentSummary[] | null)?.[0]) ?? EMPTY_SUMMARY
+}
+
+export interface ReportCount {
+  name: string
+  count: number
+}
+
+export async function fetchReportByService(from: string, to: string): Promise<ReportCount[]> {
+  const { data, error } = await supabase.rpc('report_by_service', { p_from: from, p_to: to })
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return ((data ?? []) as { service_name: string; count: number }[]).map((r) => ({
+    name: r.service_name,
+    count: r.count,
+  }))
+}
+
+export async function fetchReportByProvider(from: string, to: string): Promise<ReportCount[]> {
+  const { data, error } = await supabase.rpc('report_by_provider', { p_from: from, p_to: to })
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return ((data ?? []) as { provider_name: string; count: number }[]).map((r) => ({
+    name: r.provider_name,
+    count: r.count,
+  }))
+}
+
+export interface PatientStats {
+  total: number
+  newInRange: number
+  active: number
+}
+
+export async function fetchPatientStats(from: string, to: string): Promise<PatientStats> {
+  const { data, error } = await supabase.rpc('report_patient_stats', { p_from: from, p_to: to })
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  const row = (data as { total_patients: number; new_patients: number; active_patients: number }[] | null)?.[0]
+  return {
+    total: row?.total_patients ?? 0,
+    newInRange: row?.new_patients ?? 0,
+    active: row?.active_patients ?? 0,
+  }
+}
+
+// ------------------------------------------------------------
 // Doctor appointment schedule (own assigned appointments only)
 // ------------------------------------------------------------
 export interface DoctorAppointment {
