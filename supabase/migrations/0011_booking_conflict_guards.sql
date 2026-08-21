@@ -19,6 +19,10 @@
 -- Idempotent / re-runnable: ADD COLUMN IF NOT EXISTS, a backfill that
 -- only fills NULLs, CREATE UNIQUE INDEX IF NOT EXISTS, and CREATE OR
 -- REPLACE for the functions. Safe to run more than once.
+-- APPLIED & VERIFIED 2026-08-21 — appointment_at + appointment_date columns
+-- exist on appointments, both partial unique indexes
+-- (uniq_active_service_per_patient_day, uniq_active_time_per_patient) exist,
+-- and service_daily_availability exists.
 -- ============================================================
 
 -- ------------------------------------------------------------
