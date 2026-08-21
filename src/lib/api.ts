@@ -695,3 +695,48 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
   return data as unknown as Appointment[]
 }
+
+// ------------------------------------------------------------
+// Patient profile page
+// ------------------------------------------------------------
+export interface PatientProfile {
+  full_name: string
+  email: string | null
+  phone: string | null
+}
+
+// Read-only basic profile info. RLS ("own profile: select") already limits a
+// patient to their own row; the explicit id filter keeps the read to one row.
+export async function fetchMyProfile(userId: string): Promise<PatientProfile> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('full_name, email, phone')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  if (!data) throw new Error('Hindi mahanap ang iyong profile. / Your profile could not be found.')
+  return data as PatientProfile
+}
+
+// The complete appointment record for the profile page: EVERY status
+// (booked, checked_in, served, no_show, cancelled) so history is complete.
+// RLS ("patient: select own appointments") scopes this to the caller. The
+// caller sorts by slot_datetime for display; no server order is relied on.
+export async function fetchMyAppointmentHistory(): Promise<Appointment[]> {
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(
+      `
+      id, status,
+      services ( name ),
+      providers ( profiles ( full_name ) ),
+      time_slots ( slot_datetime ),
+      queue_tickets ( ticket_number, queue_position, qr_code, status )
+    `
+    )
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return data as unknown as Appointment[]
+}

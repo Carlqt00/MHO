@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../hooks/useAuth'
 
@@ -31,12 +31,22 @@ export function DashboardLayout({ title, children }: { title: string; children: 
               </p>
             )}
           </div>
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            {session?.role === 'patient' && (
+              <Link
+                to="/patient/profile"
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Profile
+              </Link>
+            )}
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>

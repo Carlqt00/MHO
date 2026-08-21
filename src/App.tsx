@@ -6,6 +6,7 @@ import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { PatientDashboard } from './pages/dashboards/PatientDashboard'
 import { BookAppointment } from './pages/patient/BookAppointment'
+import { PatientProfile } from './pages/patient/PatientProfile'
 import { DoctorDashboard } from './pages/dashboards/DoctorDashboard'
 import { NurseDashboard } from './pages/dashboards/NurseDashboard'
 import { StaffDashboard } from './pages/dashboards/StaffDashboard'
@@ -40,6 +41,14 @@ function App() {
             element={
               <ProtectedRoute allow={['patient']}>
                 <BookAppointment />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/patient/profile"
+            element={
+              <ProtectedRoute allow={['patient']}>
+                <PatientProfile />
               </ProtectedRoute>
             }
           />
