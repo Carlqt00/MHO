@@ -19,6 +19,8 @@
 --
 -- Idempotent: DROP POLICY IF EXISTS then CREATE (Postgres has no
 -- CREATE POLICY IF NOT EXISTS), so this is safe to re-run.
+-- APPLIED & VERIFIED 2026-08-21 — the "provider: select own appointment
+-- tickets" policy exists on queue_tickets.
 -- ============================================================
 
 drop policy if exists "provider: select own appointment tickets" on public.queue_tickets;
