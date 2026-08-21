@@ -719,6 +719,29 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
 }
 
 // ------------------------------------------------------------
+// Public QR check-in status page (/checkin/:code)
+// ------------------------------------------------------------
+export interface CheckinStatus {
+  ticket_number: string
+  queue_position: number
+  status: string
+  service_name: string
+  provider_name: string
+  slot_datetime: string
+}
+
+// Anonymous, read-only lookup via the checkin_status SECURITY DEFINER RPC
+// (migration 0015). Returns null for an unknown/invalid code so the page can
+// show a plain "not found" without leaking anything. The RPC intentionally
+// returns none of the patient's identifying data.
+export async function fetchCheckinStatus(code: string): Promise<CheckinStatus | null> {
+  const { data, error } = await supabase.rpc('checkin_status', { p_code: code })
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  const rows = (data ?? []) as CheckinStatus[]
+  return rows[0] ?? null
+}
+
+// ------------------------------------------------------------
 // Patient profile page
 // ------------------------------------------------------------
 export interface PatientProfile {

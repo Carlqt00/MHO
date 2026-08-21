@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { Checkin } from './pages/Checkin'
 import { PatientDashboard } from './pages/dashboards/PatientDashboard'
 import { BookAppointment } from './pages/patient/BookAppointment'
 import { PatientProfile } from './pages/patient/PatientProfile'
@@ -27,6 +28,8 @@ function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          {/* Public, no-login QR check-in status page */}
+          <Route path="/checkin/:code" element={<Checkin />} />
 
           <Route
             path="/patient"

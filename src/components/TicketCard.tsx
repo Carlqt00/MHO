@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 
 // Shared queue-ticket display used by BOTH the booking confirmation screen
 // (size="full") and the patient profile's Current Booking cards
@@ -29,7 +30,7 @@ const STYLES: Record<TicketSize, Record<string, string>> = {
     service: 'mt-4 text-lg font-medium text-gray-700',
     date: 'mt-1 text-gray-500',
     provider: 'mt-1 text-sm text-gray-400',
-    qrWrap: 'mt-6 rounded-xl bg-gray-50 px-4 py-3 text-left',
+    qrWrap: 'mt-6 rounded-xl bg-gray-50 px-4 py-3',
   },
   compact: {
     card: 'rounded-xl border border-emerald-300 bg-white p-5 text-center',
@@ -38,8 +39,17 @@ const STYLES: Record<TicketSize, Record<string, string>> = {
     service: 'mt-3 text-base font-medium text-gray-700',
     date: 'mt-1 text-sm text-gray-500',
     provider: 'mt-0.5 text-xs text-gray-400',
-    qrWrap: 'mt-4 rounded-xl bg-gray-50 px-4 py-3 text-left',
+    qrWrap: 'mt-4 rounded-xl bg-gray-50 px-4 py-3',
   },
+}
+
+const QR_PIXELS: Record<TicketSize, number> = { full: 176, compact: 128 }
+
+// The QR encodes a full URL to the public status page so any phone camera can
+// open it; the bare code is never encoded on its own.
+function checkinUrl(code: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/checkin/${code}`
 }
 
 export function TicketCard({
@@ -63,12 +73,16 @@ export function TicketCard({
       {status && <div className="mt-2 flex justify-center">{status}</div>}
 
       <div className={s.qrWrap}>
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <p className="text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
           QR Check-in Code
         </p>
-        <p className="mt-1 break-all font-mono text-xs text-gray-600">{qrCode}</p>
-        <p className="mt-2 text-xs text-gray-500">
-          I-scan ito sa reception pagdating sa MHO para mag-check in.
+        <div className="mt-2 flex justify-center">
+          <QRCodeSVG value={checkinUrl(qrCode)} size={QR_PIXELS[size]} />
+        </div>
+        {/* Text fallback for a phone that can't scan the image. */}
+        <p className="mt-2 break-all text-center font-mono text-xs text-gray-600">{qrCode}</p>
+        <p className="mt-2 text-center text-xs text-gray-500">
+          I-scan para makita ang inyong queue status. Mag-check in pa rin sa reception pagdating.
         </p>
       </div>
 
