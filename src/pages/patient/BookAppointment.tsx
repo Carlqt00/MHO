@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../../components/DashboardLayout'
+import { TicketCard } from '../../components/TicketCard'
 import {
   fetchServices,
   fetchOpenSlots,
@@ -219,27 +220,14 @@ export function BookAppointment() {
     return (
       <DashboardLayout title="Appointment Booked!">
         <div className="mx-auto max-w-md">
-          <div className="rounded-2xl border-2 border-emerald-400 bg-white p-8 text-center shadow-sm">
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-600">
-              Queue Ticket
-            </p>
-            <p className="mt-2 text-8xl font-bold text-gray-900">{booking.ticket_number}</p>
-            <p className="mt-4 text-lg font-medium text-gray-700">{selectedService?.name}</p>
-            <p className="mt-1 text-gray-500">{formatSlot(booking.slot_datetime)}</p>
-            <p className="mt-1 text-sm text-gray-400">
-              {selectedSlot?.providers.profiles.full_name}
-            </p>
-
-            <div className="mt-6 rounded-xl bg-gray-50 px-4 py-3 text-left">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                QR Check-in Code
-              </p>
-              <p className="mt-1 break-all font-mono text-xs text-gray-600">{booking.qr_code}</p>
-              <p className="mt-2 text-xs text-gray-500">
-                I-scan ito sa reception pagdating sa MHO para mag-check in.
-              </p>
-            </div>
-
+          <TicketCard
+            size="full"
+            ticketNumber={booking.ticket_number}
+            serviceName={selectedService?.name ?? ''}
+            dateLabel={formatSlot(booking.slot_datetime)}
+            providerName={selectedSlot?.providers.profiles.full_name ?? ''}
+            qrCode={booking.qr_code}
+          >
             <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
               Mangyaring dumating ng 15 minuto bago ang inyong appointment.
             </div>
@@ -250,7 +238,7 @@ export function BookAppointment() {
             >
               Bumalik sa Dashboard
             </button>
-          </div>
+          </TicketCard>
         </div>
       </DashboardLayout>
     )

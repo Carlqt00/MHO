@@ -49,6 +49,24 @@ export interface Appointment {
   } | null
 }
 
+// PostgREST embeds queue_tickets as a single object here (its appointment_id
+// FK is UNIQUE → a to-one relationship). But relationship detection is
+// config/version dependent, and a to-many embed would arrive as an array
+// instead. Normalize either shape to one ticket (or null) so consumers never
+// have to guess — this is the fix for the "queue number missing" bug, where
+// the object was being indexed as if it were an array.
+function normalizeTicket(qt: unknown): Appointment['queue_tickets'] {
+  if (Array.isArray(qt)) return (qt[0] as Appointment['queue_tickets']) ?? null
+  return (qt as Appointment['queue_tickets']) ?? null
+}
+
+function normalizeAppointments(rows: unknown[]): Appointment[] {
+  return (rows as Appointment[]).map((row) => ({
+    ...row,
+    queue_tickets: normalizeTicket(row.queue_tickets),
+  }))
+}
+
 export async function fetchServices(): Promise<Service[]> {
   const { data, error } = await supabase
     .from('services')
@@ -697,7 +715,7 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
     .limit(20)
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
-  return data as unknown as Appointment[]
+  return normalizeAppointments(data ?? [])
 }
 
 // ------------------------------------------------------------
@@ -742,5 +760,5 @@ export async function fetchMyAppointmentHistory(): Promise<Appointment[]> {
     .order('created_at', { ascending: false })
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
-  return data as unknown as Appointment[]
+  return normalizeAppointments(data ?? [])
 }

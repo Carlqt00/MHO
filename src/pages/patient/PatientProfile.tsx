@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DashboardLayout } from '../../components/DashboardLayout'
+import { TicketCard } from '../../components/TicketCard'
 import { useAuth } from '../../hooks/useAuth'
 import {
   fetchMyProfile,
@@ -193,48 +194,51 @@ export function PatientProfile() {
   )
 }
 
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[status] ?? 'bg-gray-100 text-gray-600'}`}
+    >
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  )
+}
+
 function CurrentBookingCard({ appt }: { appt: Appointment }) {
   // Same source the confirmation screen uses (queue_tickets, created at
-  // booking). It's a to-one embed, so it's a single object (or null).
+  // booking). The fetch normalizes the embed to a single object (or null).
   const ticket = appt.queue_tickets
 
+  // Ticket present: echo the confirmation screen's ticket, compact.
+  if (ticket) {
+    return (
+      <TicketCard
+        size="compact"
+        ticketNumber={ticket.ticket_number}
+        serviceName={appt.services.name}
+        dateLabel={formatSlot(appt.time_slots.slot_datetime)}
+        providerName={appt.providers.profiles.full_name}
+        qrCode={ticket.qr_code}
+        status={<StatusBadge status={appt.status} />}
+      />
+    )
+  }
+
+  // Tickets are issued at booking, so a missing ticket is an anomaly — degrade
+  // to the appointment details with a note rather than crash or show nothing.
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="flex items-center gap-2">
         <p className="font-semibold text-gray-800">{appt.services.name}</p>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
-        >
-          {STATUS_LABEL[appt.status] ?? appt.status}
-        </span>
+        <StatusBadge status={appt.status} />
       </div>
       <p className="mt-1 text-sm text-gray-500">
         {appt.providers.profiles.full_name} · {formatSlot(appt.time_slots.slot_datetime)}
       </p>
-
-      {ticket ? (
-        <>
-          <p className="mt-2 text-sm font-medium text-emerald-700">
-            Queue #{ticket.queue_position} · Ticket {ticket.ticket_number}
-          </p>
-          <div className="mt-3 rounded-xl bg-gray-50 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              QR Check-in Code
-            </p>
-            <p className="mt-1 break-all font-mono text-xs text-gray-600">{ticket.qr_code}</p>
-            <p className="mt-2 text-xs text-gray-500">
-              I-scan ito sa reception pagdating sa MHO para mag-check in.
-            </p>
-          </div>
-        </>
-      ) : (
-        // Tickets are issued at booking, so this is an anomaly — degrade to the
-        // appointment details with a note rather than crash or show nothing.
-        <p className="mt-2 text-sm text-gray-500">
-          Wala pang queue number na naitalaga. Ipakita ang booking na ito sa reception ng MHO. /
-          No queue number assigned yet — please show this booking at the MHO reception.
-        </p>
-      )}
+      <p className="mt-2 text-sm text-gray-500">
+        Wala pang queue number na naitalaga. Ipakita ang booking na ito sa reception ng MHO. / No
+        queue number assigned yet — please show this booking at the MHO reception.
+      </p>
     </div>
   )
 }
