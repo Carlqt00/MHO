@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { DashboardLayout } from '../../components/DashboardLayout'
 import { useAuth } from '../../hooks/useAuth'
 import {
@@ -44,9 +45,11 @@ const STATUS_COLOR: Record<string, string> = {
   no_show: 'bg-orange-100 text-orange-700',
 }
 
-// "Current" = an active (not served/cancelled/no_show) booking. Of those, the
-// one happening soonest is the patient's current booking.
-const ACTIVE_STATUSES = new Set(['booked', 'checked_in'])
+// Current booking = business that isn't finished yet (booked, plus checked_in
+// once the patient has arrived). History = finished business only. These two
+// sets are disjoint and cover every status, so nothing overlaps or disappears.
+const CURRENT_STATUSES = new Set(['booked', 'checked_in'])
+const HISTORY_STATUSES = new Set(['served', 'no_show', 'cancelled'])
 
 export function PatientProfile() {
   const { session } = useAuth()
@@ -71,30 +74,34 @@ export function PatientProfile() {
       })
   }, [userId])
 
-  // Soonest active booking = current booking; everything else is history.
   const { current, history } = useMemo(() => {
-    const active = appointments
-      .filter((a) => ACTIVE_STATUSES.has(a.status))
+    const current = appointments
+      .filter((a) => CURRENT_STATUSES.has(a.status))
       .sort(
         (a, b) =>
           new Date(a.time_slots.slot_datetime).getTime() -
           new Date(b.time_slots.slot_datetime).getTime()
-      )
-    const current = active[0] ?? null
+      ) // soonest first
 
     const history = appointments
-      .filter((a) => a.id !== current?.id)
+      .filter((a) => HISTORY_STATUSES.has(a.status))
       .sort(
         (a, b) =>
           new Date(b.time_slots.slot_datetime).getTime() -
           new Date(a.time_slots.slot_datetime).getTime()
-      )
+      ) // most recent first
 
     return { current, history }
   }, [appointments])
 
   return (
     <DashboardLayout title="Profile">
+      <div className="mb-6">
+        <Link to="/patient" className="text-sm font-medium text-emerald-700 hover:underline">
+          ← Bumalik sa Dashboard
+        </Link>
+      </div>
+
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
@@ -122,38 +129,23 @@ export function PatientProfile() {
             </dl>
           </section>
 
-          {/* 2. Current booking with its queue number */}
+          {/* 2. Current booking(s) with queue number + QR check-in code */}
           <section>
             <h2 className="mb-4 text-lg font-semibold text-gray-800">Current Booking</h2>
-            {current ? (
-              <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-gray-800">{current.services.name}</p>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[current.status] ?? 'bg-gray-100 text-gray-600'}`}
-                  >
-                    {STATUS_LABEL[current.status] ?? current.status}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-gray-500">
-                  {current.providers.profiles.full_name} ·{' '}
-                  {formatSlot(current.time_slots.slot_datetime)}
-                </p>
-                {current.queue_tickets[0] && (
-                  <p className="mt-2 text-sm font-medium text-emerald-700">
-                    Ticket: {current.queue_tickets[0].ticket_number} · Queue #
-                    {current.queue_tickets[0].queue_position}
-                  </p>
-                )}
-              </div>
-            ) : (
+            {current.length === 0 ? (
               <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
                 Wala kang kasalukuyang booking. / You have no current booking.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {current.map((appt) => (
+                  <CurrentBookingCard key={appt.id} appt={appt} />
+                ))}
               </div>
             )}
           </section>
 
-          {/* 3. Appointment history — all statuses, most recent first */}
+          {/* 3. Appointment history — finished business only, most recent first */}
           <section>
             <h2 className="mb-4 text-lg font-semibold text-gray-800">Appointment History</h2>
             {history.length === 0 ? (
@@ -198,5 +190,50 @@ export function PatientProfile() {
         </div>
       )}
     </DashboardLayout>
+  )
+}
+
+function CurrentBookingCard({ appt }: { appt: Appointment }) {
+  // Same source the confirmation screen uses (queue_tickets, created at booking).
+  const ticket = appt.queue_tickets[0]
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="flex items-center gap-2">
+        <p className="font-semibold text-gray-800">{appt.services.name}</p>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
+        >
+          {STATUS_LABEL[appt.status] ?? appt.status}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-gray-500">
+        {appt.providers.profiles.full_name} · {formatSlot(appt.time_slots.slot_datetime)}
+      </p>
+
+      {ticket ? (
+        <>
+          <p className="mt-2 text-sm font-medium text-emerald-700">
+            Queue #{ticket.queue_position} · Ticket {ticket.ticket_number}
+          </p>
+          <div className="mt-3 rounded-xl bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              QR Check-in Code
+            </p>
+            <p className="mt-1 break-all font-mono text-xs text-gray-600">{ticket.qr_code}</p>
+            <p className="mt-2 text-xs text-gray-500">
+              I-scan ito sa reception pagdating sa MHO para mag-check in.
+            </p>
+          </div>
+        </>
+      ) : (
+        // Tickets are issued at booking, so this is an anomaly — degrade to the
+        // appointment details with a note rather than crash or show nothing.
+        <p className="mt-2 text-sm text-gray-500">
+          Wala pang queue number na naitalaga. Ipakita ang booking na ito sa reception ng MHO. /
+          No queue number assigned yet — please show this booking at the MHO reception.
+        </p>
+      )}
+    </div>
   )
 }
