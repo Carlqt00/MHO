@@ -719,6 +719,54 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
 }
 
 // ------------------------------------------------------------
+// Doctor appointment schedule (own assigned appointments only)
+// ------------------------------------------------------------
+export interface DoctorAppointment {
+  id: string
+  status: string
+  time_slots: { slot_datetime: string }
+  services: { name: string }
+  patients: { profiles: { full_name: string; phone: string | null } | null } | null
+  queue_tickets: { ticket_number: string } | null
+}
+
+// Appointments assigned to the logged-in doctor within one Manila-month window.
+// RLS ("provider: select own appointments") already scopes this to provider_id =
+// my_provider_id() — a PROVIDER-based filter, not service-based — so a second
+// dentist would never see the first dentist's patients. Patient name/phone come
+// via the provider-scoped profiles/patients policies; ticket_number via the new
+// provider policy in migration 0016. Every status is included; caller sorts.
+export async function fetchDoctorAppointments(
+  monthStartISO: string,
+  monthEndISO: string
+): Promise<DoctorAppointment[]> {
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(
+      `
+      id, status,
+      time_slots!inner ( slot_datetime ),
+      services ( name ),
+      patients ( profiles ( full_name, phone ) ),
+      queue_tickets ( ticket_number )
+    `
+    )
+    .gte('time_slots.slot_datetime', monthStartISO)
+    .lte('time_slots.slot_datetime', monthEndISO)
+
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+
+  // queue_tickets is a to-one embed (unique appointment_id) → object or null,
+  // but normalize defensively in case relationship detection hands back an array.
+  return (data as unknown as DoctorAppointment[]).map((row) => ({
+    ...row,
+    queue_tickets: Array.isArray(row.queue_tickets)
+      ? (row.queue_tickets[0] ?? null)
+      : (row.queue_tickets ?? null),
+  }))
+}
+
+// ------------------------------------------------------------
 // Public QR check-in status page (/checkin/:code)
 // ------------------------------------------------------------
 export interface CheckinStatus {
