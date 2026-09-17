@@ -1,1 +1,162 @@
 @import "tailwindcss";
+
+@layer base {
+  :root {
+    color: #0f172a;
+    background: #f3fbf7;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 34rem),
+      linear-gradient(135deg, #f6fffb 0%, #eef8f3 52%, #f8fafc 100%);
+    color: #0f172a;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply w-full px-4 sm:px-6 lg:px-8;
+  }
+
+  .content-shell {
+    @apply mx-auto w-full max-w-7xl;
+  }
+
+  .card {
+    @apply rounded-2xl border border-emerald-100/80 bg-white/95 shadow-sm shadow-emerald-950/5;
+  }
+
+  .card-pad {
+    @apply p-5 sm:p-6;
+  }
+
+  .card-interactive {
+    @apply transition duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md hover:shadow-emerald-950/10;
+  }
+
+  .empty-state {
+    @apply rounded-2xl border border-dashed border-emerald-200 bg-white/75 p-8 text-center text-slate-500;
+  }
+
+  .section-kicker {
+    @apply text-xs font-semibold uppercase tracking-wide text-emerald-700;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-slate-900;
+  }
+
+  .muted {
+    @apply text-sm text-slate-500;
+  }
+
+  .btn-primary {
+    @apply inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-900/20 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-subtle {
+    @apply inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-danger {
+    @apply inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .form-control {
+    @apply w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+
+  .alert-error {
+    @apply rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700;
+  }
+
+  .alert-warn {
+    @apply rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800;
+  }
+
+  .alert-success {
+    @apply rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800;
+  }
+
+  .table-shell {
+    @apply overflow-x-auto rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-950/5;
+  }
+
+  .data-table {
+    @apply w-full text-left text-sm;
+  }
+
+  .data-table thead {
+    @apply border-b border-emerald-100 bg-emerald-50/70 text-xs uppercase tracking-wide text-slate-500;
+  }
+
+  .data-table tbody {
+    @apply divide-y divide-slate-100;
+  }
+
+  .data-table th {
+    @apply px-4 py-3 font-semibold;
+  }
+
+  .data-table td {
+    @apply px-4 py-3;
+  }
+
+  .brand-lockup {
+    @apply inline-flex items-center gap-3 font-bold text-emerald-950;
+  }
+
+  .brand-mark {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-sm font-black text-emerald-800 shadow-sm;
+  }
+
+  .brand-seal {
+    @apply h-12 w-12 shrink-0 rounded-full border border-emerald-200 bg-white object-contain p-1 shadow-sm shadow-emerald-950/10;
+  }
+
+  .landing-bg {
+    background:
+      linear-gradient(120deg, rgba(247, 254, 251, 0.78), rgba(236, 253, 245, 0.62)),
+      url("/daraga-municipality-seal.svg") center 42% / min(92vw, 860px) no-repeat,
+      radial-gradient(circle at 12% 18%, rgba(16, 185, 129, 0.12), transparent 28rem),
+      linear-gradient(135deg, #f8fffb, #eaf8f0);
+  }
+
+  .landing-panel {
+    @apply rounded-3xl border border-white/55 bg-white/55 p-6 shadow-xl shadow-emerald-950/10 backdrop-blur-sm sm:p-8 lg:p-10;
+  }
+}

@@ -27,21 +27,21 @@ export function AdminOverview() {
 
   return (
     <section>
-      <h2 className="text-lg font-semibold text-gray-800">Overview</h2>
-      <p className="mt-1 text-sm text-gray-500">Today's snapshot of the MHO system.</p>
+      <h2 className="section-title">Overview</h2>
+      <p className="mt-1 muted">Today's snapshot of the MHO system.</p>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error mt-4" role="alert">
           {error}
         </div>
       )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {CARDS.map((card) => (
-          <div key={card.key} className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-sm text-gray-500">{card.label}</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {loading ? <span className="text-gray-300">…</span> : (stats?.[card.key] ?? 0)}
+          <div key={card.key} className="card card-pad">
+            <p className="text-sm font-medium text-slate-500">{card.label}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-950">
+              {loading ? <span className="text-slate-300">…</span> : (stats?.[card.key] ?? 0)}
             </p>
           </div>
         ))}

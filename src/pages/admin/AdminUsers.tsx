@@ -14,7 +14,7 @@ const ROLE_OPTIONS: Role[] = ['patient', 'doctor', 'nurse', 'staff', 'admin']
 
 // Shared input/select styling (the project uses inline utilities, no CSS classes).
 const inputCls =
-  'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none'
+  'form-control'
 
 const ROLE_LABEL: Record<Role, string> = {
   patient: 'Patient',
@@ -89,14 +89,14 @@ export function AdminUsers() {
     <section>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">User &amp; Role Management</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="section-title">User &amp; Role Management</h2>
+          <p className="mt-1 muted">
             Create staff, provider, and admin accounts and manage their roles.
           </p>
         </div>
         <button
           onClick={() => setShowAdd((s) => !s)}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+          className="btn-primary"
         >
           {showAdd ? 'Close' : '+ Add user'}
         </button>
@@ -118,12 +118,12 @@ export function AdminUsers() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search name or email…"
-          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+          className="form-control min-w-[16rem] flex-1"
         />
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value as Role | 'all')}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+          className="form-control w-full sm:w-auto"
         >
           <option value="all">All roles</option>
           {ROLE_OPTIONS.map((r) => (
@@ -135,15 +135,15 @@ export function AdminUsers() {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error mt-4" role="alert">
           {error}
         </div>
       )}
 
       {/* Table */}
-      <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full min-w-[36rem] text-left text-sm">
-          <thead className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
+      <div className="table-shell mt-4">
+        <table className="data-table min-w-[36rem]">
+          <thead>
             <tr>
               <th className="px-4 py-3 font-semibold">Name</th>
               <th className="px-4 py-3 font-semibold">Email</th>
@@ -152,16 +152,16 @@ export function AdminUsers() {
               <th className="px-4 py-3 font-semibold">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                   Loading users…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                   No users match your filters.
                 </td>
               </tr>
@@ -220,35 +220,32 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
 
   if (result) {
     return (
-      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+      <div className="alert-success mt-4">
         <p className="font-semibold text-emerald-800">Account created</p>
         <p className="mt-1 text-sm text-emerald-700">
           {result.email} · {ROLE_LABEL[result.role]}
         </p>
         {result.generatedPassword && (
-          <div className="mt-3 rounded-lg border border-emerald-200 bg-white px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div className="mt-3 rounded-xl border border-emerald-100 bg-white px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Temporary password (shown once)
             </p>
             <div className="mt-1 flex items-center gap-2">
-              <code className="break-all font-mono text-sm text-gray-800">
+              <code className="break-all font-mono text-sm text-slate-900">
                 {result.generatedPassword}
               </code>
-              <button
-                onClick={() => navigator.clipboard?.writeText(result.generatedPassword!)}
-                className="shrink-0 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-              >
+              <button onClick={() => navigator.clipboard?.writeText(result.generatedPassword!)} className="btn-subtle min-h-8 shrink-0 px-2 py-1 text-xs">
                 Copy
               </button>
             </div>
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-slate-500">
               Give this to the user and ask them to change it after logging in.
             </p>
           </div>
         )}
         <button
           onClick={onDone}
-          className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+          className="btn-primary mt-4"
         >
           Done
         </button>
@@ -257,7 +254,7 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+    <form onSubmit={submit} className="card card-pad mt-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Full name">
           <input
@@ -316,7 +313,7 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error mt-4" role="alert">
           {error}
         </div>
       )}
@@ -325,12 +322,12 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+          className="btn-primary"
         >
           {busy ? 'Creating…' : 'Create user'}
         </button>
       </div>
-      <p className="mt-3 text-xs text-gray-400">
+      <p className="mt-3 text-xs text-slate-400">
         A temporary password is generated and shown once after creation.
       </p>
     </form>
@@ -380,26 +377,26 @@ function UserRow({
 
   return (
     <tr className="align-top">
-      <td className="px-4 py-3 font-medium text-gray-800">
-        {user.full_name || <span className="text-gray-400">—</span>}
-        {isSelf && <span className="ml-2 text-xs text-gray-400">(you)</span>}
+      <td className="font-medium text-slate-900">
+        {user.full_name || <span className="text-slate-400">—</span>}
+        {isSelf && <span className="ml-2 text-xs text-slate-400">(you)</span>}
       </td>
-      <td className="px-4 py-3 text-gray-600">{user.email ?? '—'}</td>
-      <td className="px-4 py-3">
+      <td className="break-all text-slate-600">{user.email ?? '—'}</td>
+      <td>
         <span
           className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE[user.role]}`}
         >
           {ROLE_LABEL[user.role]}
         </span>
       </td>
-      <td className="px-4 py-3 text-gray-500">{formatDate(user.created_at)}</td>
-      <td className="px-4 py-3">
+      <td className="text-slate-500">{formatDate(user.created_at)}</td>
+      <td>
         {mode === 'view' && (
           <button
             onClick={() => setMode('edit')}
             disabled={isSelf}
             title={isSelf ? 'You cannot change your own role' : undefined}
-            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-subtle min-h-8 px-3 py-1 text-xs"
           >
             Change role
           </button>
@@ -440,13 +437,13 @@ function UserRow({
               <button
                 onClick={() => setMode('confirm')}
                 disabled={newRole === user.role}
-                className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+                className="btn-primary min-h-8 px-3 py-1 text-xs"
               >
                 Review
               </button>
               <button
                 onClick={reset}
-                className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                className="btn-subtle min-h-8 px-3 py-1 text-xs"
               >
                 Cancel
               </button>
@@ -465,14 +462,14 @@ function UserRow({
               <button
                 onClick={confirm}
                 disabled={busy}
-                className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="btn-primary min-h-8 px-3 py-1 text-xs"
               >
                 {busy ? 'Saving…' : 'Confirm'}
               </button>
               <button
                 onClick={() => setMode('edit')}
                 disabled={busy}
-                className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                className="btn-subtle min-h-8 px-3 py-1 text-xs"
               >
                 Back
               </button>

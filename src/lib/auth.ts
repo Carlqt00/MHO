@@ -15,18 +15,35 @@ export interface Session {
   userId: string
   fullName: string
   role: Role
+  email: string | null
+  passwordChangeRequired: boolean
 }
 
 async function fetchProfile(userId: string): Promise<Session> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('full_name, role')
+    .select('full_name, role, email')
     .eq('id', userId)
     .maybeSingle()
 
   if (error) throw new Error(errorMessage(error, 'Could not load your profile.'))
   if (!data) throw new Error('Profile not found — try logging out and in again.')
-  return { userId, fullName: data.full_name, role: data.role as Role }
+
+  const { data: flagData } = await supabase
+    .from('profiles')
+    .select('password_change_required')
+    .eq('id', userId)
+    .maybeSingle()
+
+  return {
+    userId,
+    fullName: data.full_name,
+    role: data.role as Role,
+    email: data.email,
+    passwordChangeRequired: Boolean(
+      (flagData as { password_change_required?: boolean } | null)?.password_change_required
+    ),
+  }
 }
 
 export async function getStoredSession(): Promise<Session | null> {
@@ -95,7 +112,54 @@ export async function registerPatient(input: {
   // Build the session directly — no read-back needed. The
   // handle_new_user trigger creates the profile in the SAME
   // transaction as the auth user, and self-signup is always 'patient'.
-  return { userId: data.user.id, fullName: input.fullName.trim(), role: 'patient' }
+  return {
+    userId: data.user.id,
+    fullName: input.fullName.trim(),
+    role: 'patient',
+    email: input.email,
+    passwordChangeRequired: false,
+  }
+}
+
+export async function changeOwnPassword(input: {
+  currentPassword?: string
+  newPassword: string
+  requireCurrentPassword: boolean
+}): Promise<Session> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser()
+  const email = userData.user?.email
+  if (userErr || !userData.user || !email) {
+    throw new Error('Kailangan munang mag-login bago magpalit ng password.')
+  }
+
+  if (input.requireCurrentPassword) {
+    const { error: verifyErr } = await supabase.auth.signInWithPassword({
+      email,
+      password: input.currentPassword ?? '',
+    })
+    if (verifyErr) {
+      throw new Error('Hindi tama ang kasalukuyang password.')
+    }
+  }
+
+  const { error: updateErr } = await supabase.auth.updateUser({ password: input.newPassword })
+  if (updateErr) {
+    throw new Error(
+      errorMessage(updateErr, 'Hindi ma-update ang password. Pakisubukan ulit mamaya.')
+    )
+  }
+
+  const { error: profileErr } = await supabase
+    .from('profiles')
+    .update({ password_change_required: false })
+    .eq('id', userData.user.id)
+  if (profileErr) {
+    const raw = profileErr.message ?? ''
+    if (/password_change_required|schema cache/i.test(raw)) return fetchProfile(userData.user.id)
+    throw new Error(errorMessage(profileErr, 'Password updated, but profile update failed.'))
+  }
+
+  return fetchProfile(userData.user.id)
 }
 
 export async function signOut(): Promise<void> {

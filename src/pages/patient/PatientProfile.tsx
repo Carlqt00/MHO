@@ -98,43 +98,45 @@ export function PatientProfile() {
   return (
     <DashboardLayout title="Profile">
       <div className="mb-6">
-        <Link to="/patient" className="text-sm font-medium text-emerald-700 hover:underline">
-          ← Bumalik sa Dashboard
+        <Link to="/patient" className="text-sm font-medium text-emerald-800 hover:text-emerald-950">
+          ← Back to Dashboard
         </Link>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="alert-error mb-4">{error}</div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-slate-400">Loading…</p>
       ) : (
         <div className="space-y-8">
           {/* 1. Basic profile info (read-only) */}
-          <section className="rounded-xl border border-gray-200 bg-white p-6">
-            <h2 className="mb-4 text-lg font-semibold text-gray-800">Basic Info</h2>
+          <section className="card card-pad">
+            <div className="mb-4">
+              <h2 className="section-title">Basic Info</h2>
+            </div>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Name</dt>
-                <dd className="mt-1 text-gray-800">{profile?.full_name || '—'}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</dt>
+                <dd className="mt-1 text-slate-800">{profile?.full_name || '—'}</dd>
               </div>
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Email</dt>
-                <dd className="mt-1 text-gray-800">{profile?.email || '—'}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Email</dt>
+                <dd className="mt-1 break-all text-slate-800">{profile?.email || '—'}</dd>
               </div>
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Phone</dt>
-                <dd className="mt-1 text-gray-800">{profile?.phone || '—'}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Phone</dt>
+                <dd className="mt-1 text-slate-800">{profile?.phone || '—'}</dd>
               </div>
             </dl>
           </section>
 
           {/* 2. Current booking(s) with queue number + QR check-in code */}
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-gray-800">Current Booking</h2>
+            <h2 className="mb-4 section-title">Current Booking</h2>
             {current.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
+              <div className="empty-state">
                 Wala kang kasalukuyang booking. / You have no current booking.
               </div>
             ) : (
@@ -148,15 +150,15 @@ export function PatientProfile() {
 
           {/* 3. Appointment history — finished business only, most recent first */}
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-gray-800">Appointment History</h2>
+            <h2 className="mb-4 section-title">Appointment History</h2>
             {history.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
+              <div className="empty-state">
                 Wala ka pang nakaraang appointment. / You have no past appointments yet.
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+              <div className="table-shell">
+                <table className="data-table">
+                  <thead>
                     <tr>
                       <th className="px-4 py-3 font-medium">Date</th>
                       <th className="px-4 py-3 font-medium">Service</th>
@@ -164,14 +166,14 @@ export function PatientProfile() {
                       <th className="px-4 py-3 font-medium">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody>
                     {history.map((appt) => (
                       <tr key={appt.id}>
-                        <td className="px-4 py-3 text-gray-700">
+                        <td className="text-slate-700">
                           {formatDate(appt.time_slots.slot_datetime)}
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{appt.services.name}</td>
-                        <td className="px-4 py-3 text-gray-700">
+                        <td className="text-slate-700">{appt.services.name}</td>
+                        <td className="text-slate-700">
                           {appt.providers.profiles.full_name}
                         </td>
                         <td className="px-4 py-3">
@@ -227,15 +229,15 @@ function CurrentBookingCard({ appt }: { appt: Appointment }) {
   // Tickets are issued at booking, so a missing ticket is an anomaly — degrade
   // to the appointment details with a note rather than crash or show nothing.
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <div className="flex items-center gap-2">
-        <p className="font-semibold text-gray-800">{appt.services.name}</p>
+    <div className="card card-pad">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-semibold text-slate-900">{appt.services.name}</p>
         <StatusBadge status={appt.status} />
       </div>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-slate-500">
         {appt.providers.profiles.full_name} · {formatSlot(appt.time_slots.slot_datetime)}
       </p>
-      <p className="mt-2 text-sm text-gray-500">
+      <p className="mt-2 text-sm text-slate-500">
         Wala pang queue number na naitalaga. Ipakita ang booking na ito sa reception ng MHO. / No
         queue number assigned yet — please show this booking at the MHO reception.
       </p>

@@ -31,29 +31,29 @@ export function AnnouncementsFeed() {
 
   return (
     <section className="mt-8">
-      <h2 className="mb-3 text-lg font-semibold text-gray-800">📢 Mga Anunsyo / Announcements</h2>
+      <h2 className="mb-3 section-title">Announcements</h2>
 
       {error && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-slate-400">Loading…</p>
       ) : items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-6 text-center text-gray-500">
-          Walang anunsyo sa ngayon. / No announcements right now.
+        <div className="empty-state">
+          No announcements right now.
         </div>
       ) : (
         <div className="space-y-3">
           {items.map((a) => (
-            <article key={a.id} className="rounded-xl border border-gray-200 bg-white p-5">
+            <article key={a.id} className="card card-pad">
               <div className="flex items-baseline justify-between gap-3">
-                <h3 className="font-semibold text-gray-800">{a.title}</h3>
-                <time className="shrink-0 text-xs text-gray-400">{formatDate(a.created_at)}</time>
+                <h3 className="font-semibold text-slate-900">{a.title}</h3>
+                <time className="shrink-0 text-xs text-slate-400">{formatDate(a.created_at)}</time>
               </div>
-              <p className="mt-2 whitespace-pre-line text-sm text-gray-600">{a.body}</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{a.body}</p>
             </article>
           ))}
         </div>

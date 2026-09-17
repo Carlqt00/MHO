@@ -27,18 +27,18 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-emerald-50 px-6">
+    <div className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-6">
       <div className="w-full max-w-md">
-        <Link to="/" className="text-emerald-700 hover:underline">
-          ← Bumalik sa home
+        <Link to="/" className="text-sm font-medium text-emerald-800 hover:text-emerald-950">
+          ← Back to Home
         </Link>
-        <div className="mt-4 rounded-2xl bg-white p-8 shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-900">Mag-login</h1>
-          <p className="mt-1 text-gray-600">Ilagay ang inyong email at password.</p>
+        <div className="card card-pad mt-4">
+          <h1 className="text-2xl font-bold text-slate-950">Mag-login</h1>
+          <p className="mt-1 text-slate-600">Ilagay ang inyong email at password.</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-5">
             <div>
-              <label htmlFor="email" className="block text-base font-medium text-gray-700">
+              <label htmlFor="email" className="label">
                 Email
               </label>
               <input
@@ -47,11 +47,11 @@ export function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:border-emerald-500 focus:outline-none"
+                className="form-control"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-base font-medium text-gray-700">
+              <label htmlFor="password" className="label">
                 Password
               </label>
               <input
@@ -60,12 +60,18 @@ export function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:border-emerald-500 focus:outline-none"
+                className="form-control"
               />
+              <Link
+                to="/forgot-password"
+                className="mt-2 inline-block text-sm font-medium text-emerald-800 hover:text-emerald-950"
+              >
+                Forgot Password?
+              </Link>
             </div>
 
             {error && (
-              <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-red-700">
+              <p role="alert" className="alert-error">
                 {error}
               </p>
             )}
@@ -73,15 +79,15 @@ export function Login() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="btn-primary w-full py-4 text-base"
             >
               {busy ? 'Sandali lang…' : 'Login'}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-gray-600">
+          <p className="mt-6 text-center text-slate-600">
             Wala pang account?{' '}
-            <Link to="/register" className="font-medium text-emerald-700 hover:underline">
+            <Link to="/register" className="font-medium text-emerald-800 hover:text-emerald-950">
               Mag-register
             </Link>
           </p>

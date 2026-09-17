@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900" viewBox="0 0 900 900" fill="none" role="img" aria-label="Municipality of Daraga seal">
+  <circle cx="450" cy="450" r="416" fill="#f8fafc" fill-opacity=".78" stroke="#047857" stroke-width="18"/>
+  <circle cx="450" cy="450" r="352" fill="#ecfdf5" fill-opacity=".82" stroke="#10b981" stroke-width="8"/>
+  <circle cx="450" cy="450" r="250" fill="#ffffff" fill-opacity=".88" stroke="#047857" stroke-width="10"/>
+  <path d="M242 365c55-105 136-158 208-158 71 0 153 53 208 158-63-40-132-61-208-61s-145 21-208 61Z" fill="#059669" fill-opacity=".28"/>
+  <path d="M231 568c74-39 147-58 219-58s145 19 219 58c-55 78-128 117-219 117s-164-39-219-117Z" fill="#047857" fill-opacity=".18"/>
+  <path d="M321 506l74-159 57 105 44-72 83 126H321Z" fill="#047857"/>
+  <path d="M351 506l44-94 57 94H351Z" fill="#34d399"/>
+  <circle cx="450" cy="287" r="32" fill="#f59e0b" fill-opacity=".75"/>
+  <path d="M270 614c109 69 251 69 360 0" stroke="#047857" stroke-width="13" stroke-linecap="round"/>
+  <path id="topText" d="M171 431a279 279 0 0 1 558 0" />
+  <path id="bottomText" d="M719 514a279 279 0 0 1-538 0" />
+  <text font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#065f46" letter-spacing="4">
+    <textPath href="#topText" startOffset="50%" text-anchor="middle">MUNICIPALITY OF DARAGA</textPath>
+  </text>
+  <text font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#065f46" letter-spacing="3">
+    <textPath href="#bottomText" startOffset="50%" text-anchor="middle">MUNICIPAL HEALTH OFFICE</textPath>
+  </text>
+</svg>

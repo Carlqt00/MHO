@@ -18,7 +18,7 @@ function formatSlot(iso: string) {
 const STATUS_LABEL: Record<string, string> = {
   booked: 'Booked',
   checked_in: 'Naka-check in',
-  served: 'Tapos na',
+  served: 'Done',
   cancelled: 'Cancelled',
   no_show: 'Hindi dumating',
 }
@@ -35,6 +35,8 @@ export function PatientDashboard() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [noticeKind, setNoticeKind] = useState<'success' | 'warn'>('success')
   const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   const [tick, setTick] = useState(0)
@@ -50,8 +52,16 @@ export function PatientDashboard() {
   const handleCancel = async (id: string) => {
     if (!confirm('Sigurado ka bang gusto mong i-cancel ang appointment na ito?')) return
     setCancellingId(id)
+    setNotice('')
     try {
-      await cancelAppointment(id)
+      const result = await cancelAppointment(id)
+      if (result.smsNotificationFailed) {
+        setNoticeKind('warn')
+        setNotice('Appointment cancelled successfully, but the SMS notification could not be sent.')
+      } else {
+        setNoticeKind('success')
+        setNotice('Appointment cancelled successfully.')
+      }
       reload()
     } catch (e) {
       setError((e as Error).message)
@@ -65,24 +75,30 @@ export function PatientDashboard() {
       <div className="mb-6">
         <Link
           to="/patient/book"
-          className="inline-block rounded-xl bg-emerald-600 px-6 py-3 text-lg font-semibold text-white hover:bg-emerald-700"
+          className="btn-primary w-full sm:w-auto"
         >
-          + Mag-book ng Appointment
+          + Book an Appointment
         </Link>
       </div>
 
-      <h2 className="mb-4 text-lg font-semibold text-gray-800">Aking mga Appointment</h2>
+      <h2 className="mb-4 section-title">My Appointments</h2>
 
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="alert-error mb-4">{error}</div>
+      )}
+
+      {notice && (
+        <div className={`${noticeKind === 'warn' ? 'alert-warn' : 'alert-success'} mb-4`} role="status">
+          {notice}
+        </div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-slate-400">Loading…</p>
       ) : appointments.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
+        <div className="empty-state">
           <p className="text-lg font-medium">Wala pang appointment.</p>
-          <p className="mt-1 text-sm">I-click ang "Mag-book" para magsimula.</p>
+          <p className="mt-1 text-sm">Click "Book an Appointment" to get started.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -91,18 +107,18 @@ export function PatientDashboard() {
             return (
               <div
                 key={appt.id}
-                className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between"
+                className="card card-pad flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-gray-800">{appt.services.name}</p>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-slate-900">{appt.services.name}</p>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
                     >
                       {STATUS_LABEL[appt.status] ?? appt.status}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-slate-500">
                     {appt.providers.profiles.full_name} ·{' '}
                     {formatSlot(appt.time_slots.slot_datetime)}
                   </p>
@@ -117,7 +133,7 @@ export function PatientDashboard() {
                   <button
                     onClick={() => handleCancel(appt.id)}
                     disabled={cancellingId === appt.id}
-                    className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    className="btn-danger w-full sm:w-auto"
                   >
                     {cancellingId === appt.id ? 'Cancelling…' : 'I-cancel'}
                   </button>

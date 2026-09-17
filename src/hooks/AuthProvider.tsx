@@ -54,13 +54,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return s
   }
 
+  const refreshSession = async () => {
+    const s = await auth.getStoredSession()
+    setSession(s)
+    return s
+  }
+
   const logout = async () => {
     await auth.signOut()
     setSession(null)
   }
 
   return (
-    <AuthContext.Provider value={{ session, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ session, loading, login, register, refreshSession, logout }}>
       {children}
     </AuthContext.Provider>
   )

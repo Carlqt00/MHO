@@ -23,7 +23,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const inputCls =
-  'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none'
+  'form-control'
 
 const hhmm = (t: string) => t.slice(0, 5) // 'HH:MM:SS' → 'HH:MM'
 
@@ -71,8 +71,8 @@ export function AdminProviders() {
   if (loading) {
     return (
       <section>
-        <h2 className="text-lg font-semibold text-gray-800">Providers &amp; Time Slots</h2>
-        <p className="mt-4 text-gray-400">Loading…</p>
+        <h2 className="section-title">Providers &amp; Time Slots</h2>
+        <p className="mt-4 text-slate-400">Loading…</p>
       </section>
     )
   }
@@ -80,22 +80,22 @@ export function AdminProviders() {
   return (
     <section className="space-y-10">
       <div>
-        <h2 className="text-lg font-semibold text-gray-800">Providers &amp; Time Slots</h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <h2 className="section-title">Providers &amp; Time Slots</h2>
+        <p className="mt-1 muted">
           Set each provider's weekly availability, mark exception dates, then generate bookable
           slots.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
       {/* 1. Providers + weekly availability */}
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h3 className="section-kicker">
           Weekly availability
         </h3>
         {providers.map((p) => (
@@ -174,25 +174,25 @@ function ProviderCard({
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="card card-pad">
       <div className="flex items-center gap-2">
-        <p className="font-semibold text-gray-800">{provider.profiles.full_name}</p>
-        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-600">
+        <p className="font-semibold text-slate-900">{provider.profiles.full_name}</p>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
           {provider.provider_type}
         </span>
         {provider.specialization && (
-          <span className="text-xs text-gray-400">· {provider.specialization}</span>
+          <span className="text-xs text-slate-400">· {provider.specialization}</span>
         )}
       </div>
 
       {windows.length === 0 ? (
-        <p className="mt-3 text-sm text-gray-400">No weekly availability set.</p>
+        <p className="mt-3 text-sm text-slate-400">No weekly availability set.</p>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
           {windows.map((w) => (
             <span
               key={w.id}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700"
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-1.5 text-sm text-slate-700"
             >
               <span className="font-medium">{DAY_SHORT[w.day_of_week]}</span>
               {hhmm(w.start_time)}–{hhmm(w.end_time)}
@@ -200,7 +200,7 @@ function ProviderCard({
                 onClick={() => remove(w.id)}
                 disabled={busy}
                 aria-label={`Remove ${DAY_SHORT[w.day_of_week]} ${hhmm(w.start_time)}`}
-                className="text-gray-400 hover:text-red-600 disabled:opacity-40"
+                className="text-slate-400 hover:text-red-600 disabled:opacity-40"
               >
                 ×
               </button>
@@ -211,7 +211,7 @@ function ProviderCard({
 
       {/* add window */}
       <div className="mt-4 flex flex-wrap items-end gap-2">
-        <label className="text-xs text-gray-500">
+        <label className="min-w-[9rem] flex-1 text-xs text-slate-500 sm:flex-none">
           Day
           <select
             value={day}
@@ -225,7 +225,7 @@ function ProviderCard({
             ))}
           </select>
         </label>
-        <label className="text-xs text-gray-500">
+        <label className="min-w-[8rem] flex-1 text-xs text-slate-500 sm:flex-none">
           Start
           <input
             type="time"
@@ -234,7 +234,7 @@ function ProviderCard({
             className={`${inputCls} mt-1`}
           />
         </label>
-        <label className="text-xs text-gray-500">
+        <label className="min-w-[8rem] flex-1 text-xs text-slate-500 sm:flex-none">
           End
           <input
             type="time"
@@ -246,7 +246,7 @@ function ProviderCard({
         <button
           onClick={add}
           disabled={busy || duplicate}
-          className="rounded-lg border border-emerald-600 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+          className="btn-secondary"
         >
           + Add window
         </button>
@@ -281,12 +281,15 @@ function TimeOffSection({
   const [conflicts, setConflicts] = useState<ExceptionConflict[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [noticeKind, setNoticeKind] = useState<'success' | 'warn'>('success')
 
   const reset = () => {
     setStage('idle')
     setConflicts([])
     setReason('')
     setError('')
+    setNotice('')
   }
 
   const scopeLabel = scope
@@ -337,8 +340,16 @@ function TimeOffSection({
   const cancelOne = async (id: string) => {
     setBusy(true)
     setError('')
+    setNotice('')
     try {
-      await cancelAppointment(id)
+      const result = await cancelAppointment(id)
+      if (result.smsNotificationFailed) {
+        setNoticeKind('warn')
+        setNotice('Appointment cancelled successfully, but the SMS notification could not be sent.')
+      } else {
+        setNoticeKind('success')
+        setNotice('Appointment cancelled successfully.')
+      }
       setConflicts(await fetchExceptionConflicts(scope || null, date))
     } catch (e) {
       setError(errorMessage(e, 'Could not cancel the appointment.'))
@@ -363,19 +374,19 @@ function TimeOffSection({
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h3 className="section-kicker">
           Exception dates
         </h3>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 muted">
           Days with no slots — clinic-wide holidays or a provider's leave. Remaining open slots stop
           being bookable immediately; already-booked appointments are never deleted automatically.
         </p>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="card card-pad">
         {stage === 'idle' && (
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs text-gray-500">
+            <label className="min-w-[14rem] flex-1 text-xs text-slate-500">
               Applies to
               <select
                 value={scope}
@@ -390,7 +401,7 @@ function TimeOffSection({
                 ))}
               </select>
             </label>
-            <label className="text-xs text-gray-500">
+            <label className="min-w-[10rem] flex-1 text-xs text-slate-500">
               Date
               <input
                 type="date"
@@ -399,7 +410,7 @@ function TimeOffSection({
                 className={`${inputCls} mt-1`}
               />
             </label>
-            <label className="text-xs text-gray-500">
+            <label className="min-w-[14rem] flex-1 text-xs text-slate-500">
               Reason (optional)
               <input
                 value={reason}
@@ -411,7 +422,7 @@ function TimeOffSection({
             <button
               onClick={check}
               disabled={busy}
-              className="rounded-lg border border-emerald-600 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+              className="btn-secondary"
             >
               {busy ? 'Checking…' : '+ Add'}
             </button>
@@ -419,7 +430,7 @@ function TimeOffSection({
         )}
 
         {stage === 'confirm' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <p className="text-sm font-semibold text-amber-800">
               {conflicts.length} booked appointment{conflicts.length === 1 ? '' : 's'} on {date} for{' '}
               {scopeLabel}
@@ -433,14 +444,14 @@ function TimeOffSection({
               <button
                 onClick={commit}
                 disabled={busy}
-                className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+                className="btn-primary bg-amber-600 hover:bg-amber-700"
               >
                 {busy ? 'Adding…' : 'Add exception anyway'}
               </button>
               <button
                 onClick={reset}
                 disabled={busy}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                className="btn-secondary"
               >
                 Back
               </button>
@@ -449,24 +460,39 @@ function TimeOffSection({
         )}
 
         {stage === 'added' && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+          <div className="alert-success">
             <p className="text-sm font-semibold text-emerald-800">
               Exception added for {date} · {scopeLabel}
             </p>
             {conflicts.length === 0 ? (
-              <p className="mt-1 text-xs text-emerald-700">No booked appointments were affected.</p>
+              <p
+                className={`mt-1 text-xs ${
+                  notice && noticeKind === 'warn' ? 'text-amber-700' : 'text-emerald-700'
+                }`}
+              >
+                {notice || 'No booked appointments were affected.'}
+              </p>
             ) : (
               <>
                 <p className="mt-1 text-xs text-emerald-700">
                   {conflicts.length} appointment{conflicts.length === 1 ? '' : 's'} still to
                   resolve. Cancel here, or reschedule via the Reschedule feature.
                 </p>
+                {notice && (
+                  <p
+                    className={`mt-2 text-xs ${
+                      noticeKind === 'warn' ? 'text-amber-700' : 'text-emerald-700'
+                    }`}
+                  >
+                    {notice}
+                  </p>
+                )}
                 <ConflictList conflicts={conflicts} onCancel={cancelOne} busy={busy} />
               </>
             )}
             <button
               onClick={reset}
-              className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              className="btn-primary mt-3"
             >
               Done
             </button>
@@ -476,21 +502,17 @@ function TimeOffSection({
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
         {timeOff.length > 0 && (
-          <ul className="mt-4 divide-y divide-gray-100">
+          <ul className="mt-4 divide-y divide-slate-100">
             {timeOff.map((t) => (
               <li key={t.id} className="flex items-center justify-between py-2 text-sm">
                 <span>
-                  <span className="font-medium text-gray-800">{t.exception_date}</span>
-                  <span className="ml-2 text-gray-500">
+                  <span className="font-medium text-slate-900">{t.exception_date}</span>
+                  <span className="ml-2 text-slate-500">
                     {t.provider_id ? t.providers?.profiles.full_name : 'All providers (holiday)'}
                   </span>
-                  {t.reason && <span className="ml-2 text-gray-400">· {t.reason}</span>}
+                  {t.reason && <span className="ml-2 text-slate-400">· {t.reason}</span>}
                 </span>
-                <button
-                  onClick={() => removeExisting(t.id)}
-                  disabled={busy}
-                  className="text-gray-400 hover:text-red-600 disabled:opacity-40"
-                >
+                <button onClick={() => removeExisting(t.id)} disabled={busy} className="text-slate-400 hover:text-red-600 disabled:opacity-40">
                   Remove
                 </button>
               </li>
@@ -518,13 +540,13 @@ function ConflictList({
           <span className="text-gray-700">
             <span className="font-medium">{c.patient_name}</span> · {c.service_name} ·{' '}
             {c.provider_name} · {formatSlotSample(c.slot_datetime)}
-            <span className="ml-1 text-xs text-gray-400">({c.status})</span>
+            <span className="ml-1 text-xs text-slate-400">({c.status})</span>
           </span>
           {onCancel && (
             <button
               onClick={() => onCancel(c.appointment_id)}
               disabled={busy}
-              className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+              className="btn-danger min-h-8 shrink-0 px-2 py-1 text-xs"
             >
               Cancel
             </button>
@@ -596,18 +618,18 @@ function SlotGenerator({
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h3 className="section-kicker">
           Generate time slots
         </h3>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 muted">
           Expands a provider's weekly availability into bookable slots. Idempotent — existing and
           booked slots are never touched.
         </p>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="card card-pad">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="text-xs text-gray-500">
+          <label className="text-xs text-slate-500">
             Provider
             <select
               value={providerId}
@@ -625,7 +647,7 @@ function SlotGenerator({
               ))}
             </select>
           </label>
-          <label className="text-xs text-gray-500">
+          <label className="text-xs text-slate-500">
             Service
             <select
               value={serviceId}
@@ -643,7 +665,7 @@ function SlotGenerator({
               ))}
             </select>
           </label>
-          <label className="text-xs text-gray-500">
+          <label className="text-xs text-slate-500">
             Interval (minutes)
             <input
               type="number"
@@ -658,7 +680,7 @@ function SlotGenerator({
               className={`${inputCls} mt-1`}
             />
           </label>
-          <label className="text-xs text-gray-500">
+          <label className="text-xs text-slate-500">
             From
             <input
               type="date"
@@ -670,7 +692,7 @@ function SlotGenerator({
               className={`${inputCls} mt-1`}
             />
           </label>
-          <label className="text-xs text-gray-500">
+          <label className="text-xs text-slate-500">
             To
             <input
               type="date"
@@ -688,7 +710,7 @@ function SlotGenerator({
           <button
             onClick={runPreview}
             disabled={!ready || busy}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            className="btn-secondary"
           >
             {busy && !preview ? 'Previewing…' : 'Preview'}
           </button>
@@ -696,7 +718,7 @@ function SlotGenerator({
             onClick={runGenerate}
             disabled={!preview || busy}
             title={!preview ? 'Preview first' : undefined}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+            className="btn-primary"
           >
             {busy && preview ? 'Generating…' : 'Generate slots'}
           </button>
@@ -733,7 +755,7 @@ function SummaryCard({
   return (
     <div
       className={`mt-4 rounded-lg border p-4 ${
-        success ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'
+        success ? 'border-emerald-200 bg-emerald-50' : 'border-emerald-100 bg-emerald-50/50'
       }`}
     >
       <p className={`text-sm font-semibold ${success ? 'text-emerald-800' : 'text-gray-700'}`}>
@@ -747,7 +769,7 @@ function SummaryCard({
       </div>
       {summary.sample.length > 0 && (
         <div className="mt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">First slots</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First slots</p>
           <p className="mt-1 text-xs text-gray-600">
             {summary.sample.map(formatSlotSample).join(' · ')}
           </p>
@@ -765,8 +787,8 @@ function SummaryCard({
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md bg-white px-3 py-2">
-      <p className="text-lg font-bold text-gray-900">{value}</p>
-      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-lg font-bold text-slate-950">{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
     </div>
   )
 }
@@ -815,7 +837,7 @@ function GenerateResultModal({
       aria-modal="true"
       aria-labelledby="genresult-title"
     >
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+      <div className="card w-full max-w-md p-6 shadow-xl shadow-emerald-950/15">
         <h3
           id="genresult-title"
           className={`text-base font-semibold ${
@@ -826,7 +848,7 @@ function GenerateResultModal({
           {headline}
         </h3>
 
-        <p className="mt-2 text-sm text-gray-500">
+        <p className="mt-2 text-sm text-slate-500">
           {serviceName} · {providerName}
           <br />
           {from} → {to}
@@ -865,7 +887,7 @@ function GenerateResultModal({
             )}
             {summary.sample.length > 0 && (
               <div className="mt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                   Unang mga slot
                 </p>
                 <p className="mt-1 text-xs text-gray-600">
@@ -890,8 +912,8 @@ function GenerateResultModal({
 function ModalStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-gray-200 px-3 py-2">
-      <p className="text-lg font-bold text-gray-900">{value}</p>
-      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-lg font-bold text-slate-950">{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
     </div>
   )
 }

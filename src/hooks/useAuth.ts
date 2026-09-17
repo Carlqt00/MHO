@@ -11,6 +11,7 @@ export interface AuthContextValue {
     phone: string
     password: string
   }) => Promise<Session>
+  refreshSession: () => Promise<Session | null>
   logout: () => Promise<void>
 }
 

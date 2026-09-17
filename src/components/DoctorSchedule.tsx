@@ -113,32 +113,32 @@ export function DoctorSchedule() {
   })
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6">
+    <div className="card card-pad">
       {/* One month control drives both sections. */}
-      <div className="mb-6 flex items-center justify-end gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
         <button
           onClick={() => setView(addMonths(view, -1))}
-          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+          className="btn-subtle min-h-9 px-3 py-1"
         >
           ← Prev
         </button>
-        <span className="min-w-[9rem] text-center text-base font-semibold text-gray-800">
+        <span className="min-w-[9rem] text-center text-base font-semibold text-slate-900">
           {monthLabel}
         </span>
         <button
           onClick={() => setView(addMonths(view, 1))}
-          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+          className="btn-subtle min-h-9 px-3 py-1"
         >
           Next →
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="alert-error mb-4">{error}</div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-slate-400">Loading…</p>
       ) : (
         <div className="space-y-8">
           <ScheduleSection
@@ -168,15 +168,15 @@ function ScheduleSection({
 }) {
   return (
     <section>
-      <h3 className="mb-3 text-base font-semibold text-gray-800">{title}</h3>
+      <h3 className="mb-3 text-base font-semibold text-slate-900">{title}</h3>
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-gray-500">
+        <div className="empty-state">
           {emptyMessage}
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <div className="table-shell">
+          <table className="data-table">
+            <thead>
               <tr>
                 <th className="px-3 py-2 font-medium">Date</th>
                 <th className="px-3 py-2 font-medium">Time</th>
@@ -187,11 +187,11 @@ function ScheduleSection({
                 <th className="px-3 py-2 font-medium">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {rows.map((appt) => {
                 const profile = appt.patients?.profiles
                 return (
-                  <tr key={appt.id} className="text-gray-700">
+                  <tr key={appt.id} className="text-slate-700">
                     <td className="px-3 py-2 whitespace-nowrap">
                       {formatDate(appt.time_slots.slot_datetime)}
                     </td>

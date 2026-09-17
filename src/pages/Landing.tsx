@@ -2,67 +2,71 @@ import { Link } from 'react-router-dom'
 
 export function Landing() {
   return (
-    <div className="min-h-screen bg-emerald-50">
-      <header className="px-6 py-5">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <span className="text-lg font-bold text-emerald-800">MHO Daraga</span>
+    <div className="landing-bg min-h-screen">
+      <header className="page-shell py-5">
+        <div className="content-shell flex items-center justify-between">
+          <span className="brand-lockup text-lg">
+            <img
+              src="/daraga-municipality-seal.svg"
+              alt="Municipality of Daraga seal"
+              className="brand-seal"
+            />
+            <span>MHO Daraga</span>
+          </span>
           <Link
             to="/login"
-            className="rounded-lg px-4 py-2 text-base font-medium text-emerald-800 hover:bg-emerald-100"
+            className="btn-secondary"
           >
             Login
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-12 text-center">
-        <h1 className="text-4xl font-bold text-gray-900 sm:text-5xl">
-          Magpa-appointment nang madali sa Daraga Health Office
-        </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-xl text-gray-600">
-          Hindi na kailangang pumila nang maaga. Mag-book ng appointment online, kunin ang inyong
-          queue number, at pumunta sa health center sa tamang oras.
-        </p>
+      <main className="page-shell pb-12 pt-8 sm:pt-14">
+        <div className="content-shell">
+          <section className="landing-panel mx-auto max-w-3xl text-center">
+            <p className="section-kicker">Daraga Municipal Health Office</p>
+            <h1 className="mx-auto mt-4 flex max-w-2xl flex-col items-center gap-1.5 text-center font-bold leading-[1.12] text-slate-950 sm:gap-2">
+              <span className="block text-[clamp(1.625rem,4.25vw,2.5rem)]">
+                MUNICIPAL HEALTH OFFICE
+              </span>
+              <span className="block max-w-full text-balance text-[clamp(1.375rem,3.5vw,2rem)]">
+                CENTRALIZED APPOINTMENT AND TICKETING SYSTEM
+              </span>
+              <span className="block text-[clamp(1.625rem,4.25vw,2.5rem)]">
+                IN DARAGA, ALBAY
+              </span>
+            </h1>
 
-        <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <Link
-            to="/register"
-            className="w-full rounded-xl bg-emerald-600 px-8 py-4 text-xl font-semibold text-white hover:bg-emerald-700 sm:w-auto"
-          >
-            Gumawa ng Account
-          </Link>
-          <Link
-            to="/login"
-            className="w-full rounded-xl border-2 border-emerald-600 px-8 py-4 text-xl font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto"
-          >
-            May Account Na Ako
-          </Link>
-        </div>
+            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:mt-8 sm:flex-row">
+              <Link to="/register" className="btn-primary w-full px-8 py-4 text-base sm:w-auto">
+                Create Account
+              </Link>
+              <Link to="/login" className="btn-secondary w-full px-8 py-4 text-base sm:w-auto">
+                I Already Have an Account
+              </Link>
+            </div>
+          </section>
 
-        <div className="mx-auto mt-16 grid max-w-3xl gap-6 text-left sm:grid-cols-3">
-          <div className="rounded-xl bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-800">1. Mag-book</h2>
-            <p className="mt-2 text-gray-600">
-              Piliin ang serbisyo at oras na gusto ninyo — Immunization, Prenatal, Check-up, o
-              Dental.
-            </p>
-          </div>
-          <div className="rounded-xl bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-800">2. Kunin ang ticket</h2>
-            <p className="mt-2 text-gray-600">
-              Makakatanggap kayo ng queue number at paalala bago ang inyong appointment.
-            </p>
-          </div>
-          <div className="rounded-xl bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-800">3. Pumunta sa MHO</h2>
-            <p className="mt-2 text-gray-600">
-              I-scan ang QR code pagdating para mag-check in. Hintayin ang inyong numero.
-            </p>
+          <div className="mx-auto mt-10 grid max-w-5xl gap-4 text-left sm:grid-cols-3">
+            {[
+              ['01', 'Mag-book', 'Piliin ang serbisyo at oras na gusto ninyo: Immunization, Prenatal, Check-up, o Dental.'],
+              ['02', 'Kunin ang ticket', 'Makakatanggap kayo ng queue number at paalala bago ang inyong appointment.'],
+              ['03', 'Pumunta sa MHO', 'Pumunta sa MHO nang ilang minuto bago ang oras ng inyong appointment.'],
+            ].map(([number, title, body]) => (
+              <article key={title} className="card card-interactive card-pad">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-sm font-bold text-emerald-800">
+                  {number}
+                </span>
+                <h2 className="mt-4 text-lg font-semibold text-slate-900">{title}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
+              </article>
+            ))}
           </div>
         </div>
       </main>
 
-      <footer className="px-6 py-8 text-center text-gray-500">
+      <footer className="page-shell pb-8 text-center text-sm text-slate-500">
         Daraga Municipal Health Office · San Roque, Daraga, Albay
       </footer>
     </div>

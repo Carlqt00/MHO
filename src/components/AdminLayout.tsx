@@ -14,6 +14,7 @@ const SECTIONS: { to: string; label: string; end?: boolean; roles: Role[] }[] = 
   { to: '/admin/notifications', label: 'Notifications', roles: ['admin'] },
   { to: '/admin/reports', label: 'Reports', roles: ['admin', 'staff'] },
   { to: '/admin/queue', label: 'Live Queue', roles: ['admin'] },
+  { to: '/admin/password-resets', label: 'Password Resets', roles: ['admin'] },
 ]
 
 export function AdminLayout() {
@@ -22,10 +23,10 @@ export function AdminLayout() {
   const sections = SECTIONS.filter((s) => role && s.roles.includes(role))
 
   return (
-    <DashboardLayout title={role === 'admin' ? 'Administrator Dashboard' : 'Reports'}>
-      <div className="flex flex-col gap-6 md:flex-row">
+    <DashboardLayout title={role === 'admin' ? 'Administrator Dashboard' : 'Reports'} wide>
+      <div className="flex w-full min-w-0 flex-col gap-6 md:flex-row">
         {/* Horizontal scroll on phones, vertical sidebar on tablets/desktop */}
-        <nav aria-label="Admin sections" className="md:w-52 md:shrink-0">
+        <nav aria-label="Admin sections" className="min-w-0 md:w-56 md:shrink-0">
           <ul className="flex gap-1 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
             {sections.map((section) => (
               <li key={section.to} className="shrink-0 md:shrink">
@@ -33,10 +34,10 @@ export function AdminLayout() {
                   to={section.to}
                   end={section.end}
                   className={({ isActive }) =>
-                    `block whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    `block whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-emerald-600 text-white'
-                        : 'text-gray-600 hover:bg-gray-100'
+                        ? 'bg-emerald-700 text-white shadow-sm shadow-emerald-900/20'
+                        : 'text-slate-600 hover:bg-white hover:text-emerald-800'
                     }`
                   }
                 >

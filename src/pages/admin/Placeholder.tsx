@@ -3,9 +3,9 @@
 export function Placeholder({ title, summary }: { title: string; summary: string }) {
   return (
     <section>
-      <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-      <p className="mt-1 text-sm text-gray-500">{summary}</p>
-      <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-400">
+      <h2 className="section-title">{title}</h2>
+      <p className="mt-1 muted">{summary}</p>
+      <div className="empty-state mt-4">
         Coming in a later phase.
       </div>
     </section>

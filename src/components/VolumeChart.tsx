@@ -179,17 +179,17 @@ export function VolumeChart() {
   const maxTotal = useMemo(() => Math.max(1, ...buckets.map((b) => b.total)), [buckets])
 
   return (
-    <section className="mt-8 rounded-xl border border-gray-200 bg-white p-5">
+    <section className="card card-pad mt-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-gray-800">Patient Volume</h3>
-          <p className="text-sm text-gray-500">
+          <h3 className="text-base font-semibold text-slate-900">Patient Volume</h3>
+          <p className="text-sm text-slate-500">
             Total appointments booked per period, by what became of them.
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400" aria-live="polite">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <span className="text-xs text-slate-400" aria-live="polite">
               {lastUpdated ? `Updated ${formatUpdated(lastUpdated)}` : 'Loading…'}
             </span>
             <button
@@ -197,12 +197,12 @@ export function VolumeChart() {
               onClick={refresh}
               disabled={loading}
               title="Refresh — this chart is a snapshot, not a live feed"
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 disabled:opacity-50"
+              className="btn-subtle min-h-9 px-3 py-1"
             >
               ↻ Refresh
             </button>
           </div>
-          <div className="flex gap-1" role="group" aria-label="Chart granularity">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Chart granularity">
             {GRANULARITIES.map((g) => (
               <button
                 key={g}
@@ -215,8 +215,8 @@ export function VolumeChart() {
                 aria-pressed={granularity === g}
                 className={`rounded-md border px-3 py-1 text-sm ${
                   granularity === g
-                    ? 'border-gray-800 bg-gray-800 text-white'
-                    : 'border-gray-300 bg-white text-gray-700'
+                    ? 'border-emerald-800 bg-emerald-800 text-white'
+                    : 'border-emerald-200 bg-white text-slate-700 hover:bg-emerald-50'
                 }`}
               >
                 {GRANULARITY_CONFIG[g].label}
@@ -227,7 +227,7 @@ export function VolumeChart() {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error mt-4" role="alert">
           {error}
         </div>
       )}
@@ -241,8 +241,8 @@ export function VolumeChart() {
               className="inline-block h-4 w-4 rounded-sm border border-gray-300"
               style={fillStyle(s.color, s.pattern, true)}
             />
-            <span className="text-gray-700">
-              {s.label} <span className="text-gray-400">({s.meaning})</span>
+            <span className="text-slate-700">
+              {s.label} <span className="text-slate-400">({s.meaning})</span>
             </span>
           </li>
         ))}
@@ -250,19 +250,19 @@ export function VolumeChart() {
 
       {/* Chart. Empty periods still render as zero-height bars (not gaps). */}
       <div className="mt-4 overflow-x-auto">
-        <div className="flex items-end gap-1" style={{ height: CHART_HEIGHT + 48 }}>
+        <div className="flex min-w-[42rem] items-end gap-1" style={{ height: CHART_HEIGHT + 48 }}>
           {loading ? (
-            <p className="self-center text-sm text-gray-400">Loading…</p>
+            <p className="self-center text-sm text-slate-400">Loading…</p>
           ) : (
             buckets.map((b, i) => (
               <div key={b.period} className="flex min-w-[18px] flex-1 flex-col items-center">
                 {/* Total above the bar — omitted for empty periods; the nbsp keeps
                     the row height uniform so all bar baselines still line up. */}
-                <span className="mb-0.5 text-[10px] font-medium text-gray-600">
+                <span className="mb-0.5 text-[10px] font-medium text-slate-600">
                   {b.total > 0 ? b.total : ' '}
                 </span>
                 <div
-                  className="flex w-full flex-col justify-end border-b border-gray-200"
+                  className="flex w-full flex-col justify-end border-b border-slate-200"
                   style={{ height: CHART_HEIGHT }}
                 >
                   {/* top→bottom render = reversed segment order so Attended sits at the bottom */}
@@ -276,7 +276,7 @@ export function VolumeChart() {
                       <div
                         key={s.key}
                         title={`${s.label}: ${value}`}
-                        className="flex items-center justify-center overflow-hidden text-[9px] font-semibold"
+                      className="flex items-center justify-center overflow-hidden text-[9px] font-semibold"
                         style={{
                           height: h,
                           color: s.text,
@@ -293,12 +293,12 @@ export function VolumeChart() {
                     sit flat. */}
                 {granularity === 'day' ? (
                   <div className="mt-1 flex h-7 w-full justify-center">
-                    <span className="origin-top -rotate-45 whitespace-nowrap text-[9px] leading-none text-gray-500">
+                    <span className="origin-top -rotate-45 whitespace-nowrap text-[9px] leading-none text-slate-500">
                       {axisLabel(b.period, i > 0 ? buckets[i - 1].period : null, granularity)}
                     </span>
                   </div>
                 ) : (
-                  <span className="mt-1 w-full whitespace-nowrap text-center text-[9px] text-gray-500">
+                  <span className="mt-1 w-full whitespace-nowrap text-center text-[9px] text-slate-500">
                     {axisLabel(b.period, i > 0 ? buckets[i - 1].period : null, granularity)}
                   </span>
                 )}
@@ -310,17 +310,17 @@ export function VolumeChart() {
 
       {/* Derived figures — surfaced, not buried in the chart. */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 p-3">
-          <p className="text-sm text-gray-500">No-show rate</p>
-          <p className="text-2xl font-bold text-gray-900">{pct(rates.noShowRate)}</p>
-          <p className="text-xs text-gray-400">
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
+          <p className="text-sm text-slate-500">No-show rate</p>
+          <p className="text-2xl font-bold text-slate-950">{pct(rates.noShowRate)}</p>
+          <p className="text-xs text-slate-400">
             {rates.noShow} of {rates.total} in view
           </p>
         </div>
-        <div className="rounded-lg border border-gray-200 p-3">
-          <p className="text-sm text-gray-500">Cancellation rate</p>
-          <p className="text-2xl font-bold text-gray-900">{pct(rates.cancelledRate)}</p>
-          <p className="text-xs text-gray-400">
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
+          <p className="text-sm text-slate-500">Cancellation rate</p>
+          <p className="text-2xl font-bold text-slate-950">{pct(rates.cancelledRate)}</p>
+          <p className="text-xs text-slate-400">
             {rates.cancelled} of {rates.total} in view
           </p>
         </div>
@@ -328,7 +328,7 @@ export function VolumeChart() {
 
       {/* Stale-booked note. NOT auto-reclassified — surfaced for staff. */}
       {staleCount > 0 && (
-        <p className="mt-3 text-sm text-amber-700">
+        <p className="alert-warn mt-3">
           ⚠ {staleCount} past appointment{staleCount === 1 ? '' : 's'} still marked booked — not yet
           closed out by staff.
         </p>

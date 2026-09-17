@@ -62,7 +62,7 @@ export function AdminReports() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-gray-800">Reports</h2>
+        <h2 className="section-title">Reports</h2>
         <div className="flex gap-1" role="group" aria-label="Date range">
           {PRESETS.map((p) => (
             <button
@@ -74,8 +74,8 @@ export function AdminReports() {
               aria-pressed={preset === p}
               className={`rounded-md border px-3 py-1 text-sm ${
                 preset === p
-                  ? 'border-gray-800 bg-gray-800 text-white'
-                  : 'border-gray-300 bg-white text-gray-700'
+                  ? 'border-emerald-800 bg-emerald-800 text-white'
+                  : 'border-emerald-200 bg-white text-slate-700 hover:bg-emerald-50'
               }`}
             >
               {PRESET_LABEL[p]}
@@ -85,39 +85,31 @@ export function AdminReports() {
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
       {loading || !data ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-slate-400">Loading…</p>
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Period: <span className="font-medium">{data.range.label}</span>{' '}
-              <span className="text-gray-400">
+              <span className="text-slate-400">
                 ({data.range.from} to {data.range.to})
               </span>
               <br />
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-slate-400">
                 Generated {generatedLabel(data.generatedAt)}
               </span>
             </p>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => void exportReportPdf(data)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-              >
+              <button type="button" onClick={() => void exportReportPdf(data)} className="btn-subtle min-h-9 px-3 py-1">
                 Export PDF
               </button>
-              <button
-                type="button"
-                onClick={() => void exportReportExcel(data)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-              >
+              <button type="button" onClick={() => void exportReportExcel(data)} className="btn-subtle min-h-9 px-3 py-1">
                 Export Excel
               </button>
             </div>
@@ -169,8 +161,8 @@ export function AdminReports() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-5">
-      <h3 className="mb-3 text-base font-semibold text-gray-800">{title}</h3>
+    <section className="card card-pad">
+      <h3 className="mb-3 text-base font-semibold text-slate-900">{title}</h3>
       {children}
     </section>
   )
@@ -178,33 +170,35 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-lg border border-gray-200 p-3">
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
+    <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-2xl font-bold text-slate-950">{value}</p>
     </div>
   )
 }
 
 function CountTable({ rows, firstColumn }: { rows: ReportCount[]; firstColumn: string }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-gray-500">No appointments in this period.</p>
+    return <p className="text-sm text-slate-500">No appointments in this period.</p>
   }
   return (
-    <table className="w-full text-left text-sm">
-      <thead className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+    <div className="table-shell shadow-none">
+      <table className="data-table">
+      <thead>
         <tr>
-          <th className="py-2 pr-3 font-medium">{firstColumn}</th>
-          <th className="py-2 font-medium">Appointments</th>
+          <th>{firstColumn}</th>
+          <th>Appointments</th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-gray-100">
+      <tbody>
         {rows.map((r) => (
-          <tr key={r.name} className="text-gray-700">
-            <td className="py-2 pr-3">{r.name}</td>
-            <td className="py-2">{r.count}</td>
+          <tr key={r.name} className="text-slate-700">
+            <td>{r.name}</td>
+            <td>{r.count}</td>
           </tr>
         ))}
       </tbody>
     </table>
+    </div>
   )
 }

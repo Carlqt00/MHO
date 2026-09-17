@@ -24,22 +24,22 @@ interface TicketCardProps {
 
 const STYLES: Record<TicketSize, Record<string, string>> = {
   full: {
-    card: 'rounded-2xl border-2 border-emerald-400 bg-white p-8 text-center shadow-sm',
-    label: 'text-sm font-semibold uppercase tracking-widest text-emerald-600',
-    number: 'mt-2 text-8xl font-bold text-gray-900',
-    service: 'mt-4 text-lg font-medium text-gray-700',
-    date: 'mt-1 text-gray-500',
-    provider: 'mt-1 text-sm text-gray-400',
-    qrWrap: 'mt-6 rounded-xl bg-gray-50 px-4 py-3',
+    card: 'card p-8 text-center',
+    label: 'text-sm font-semibold uppercase tracking-widest text-emerald-700',
+    number: 'mt-2 text-8xl font-bold text-slate-950',
+    service: 'mt-4 text-lg font-medium text-slate-700',
+    date: 'mt-1 text-slate-500',
+    provider: 'mt-1 text-sm text-slate-400',
+    qrWrap: 'mt-6 rounded-2xl bg-emerald-50/70 px-4 py-3',
   },
   compact: {
-    card: 'rounded-xl border border-emerald-300 bg-white p-5 text-center',
-    label: 'text-xs font-semibold uppercase tracking-widest text-emerald-600',
-    number: 'mt-1 text-5xl font-bold text-gray-900',
-    service: 'mt-3 text-base font-medium text-gray-700',
-    date: 'mt-1 text-sm text-gray-500',
-    provider: 'mt-0.5 text-xs text-gray-400',
-    qrWrap: 'mt-4 rounded-xl bg-gray-50 px-4 py-3',
+    card: 'card p-5 text-center',
+    label: 'text-xs font-semibold uppercase tracking-widest text-emerald-700',
+    number: 'mt-1 text-5xl font-bold text-slate-950',
+    service: 'mt-3 text-base font-medium text-slate-700',
+    date: 'mt-1 text-sm text-slate-500',
+    provider: 'mt-0.5 text-xs text-slate-400',
+    qrWrap: 'mt-4 rounded-2xl bg-emerald-50/70 px-4 py-3',
   },
 }
 
@@ -73,15 +73,15 @@ export function TicketCard({
       {status && <div className="mt-2 flex justify-center">{status}</div>}
 
       <div className={s.qrWrap}>
-        <p className="text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
           QR Check-in Code
         </p>
         <div className="mt-2 flex justify-center">
           <QRCodeSVG value={checkinUrl(qrCode)} size={QR_PIXELS[size]} />
         </div>
         {/* Text fallback for a phone that can't scan the image. */}
-        <p className="mt-2 break-all text-center font-mono text-xs text-gray-600">{qrCode}</p>
-        <p className="mt-2 text-center text-xs text-gray-500">
+        <p className="mt-2 break-all text-center font-mono text-xs text-slate-600">{qrCode}</p>
+        <p className="mt-2 text-center text-xs text-slate-500">
           I-scan para makita ang inyong queue status. Mag-check in pa rin sa reception pagdating.
         </p>
       </div>

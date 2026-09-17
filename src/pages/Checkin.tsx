@@ -42,32 +42,35 @@ export function Checkin() {
   }, [code])
 
   return (
-    <div className="min-h-screen bg-emerald-50">
-      <header className="px-6 py-5">
+    <div className="min-h-screen">
+      <header className="px-4 py-5 sm:px-6">
         <div className="mx-auto max-w-md">
-          <span className="text-lg font-bold text-emerald-800">MHO Daraga</span>
+          <span className="brand-lockup text-lg">
+            <span className="brand-mark">MHO</span>
+            <span>MHO Daraga</span>
+          </span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-md px-6 py-8">
-        <h1 className="mb-6 text-center text-2xl font-bold text-gray-900">Check-in Status</h1>
+      <main className="mx-auto max-w-md px-4 py-8 sm:px-6">
+        <h1 className="mb-6 text-center text-2xl font-bold text-slate-950">Check-in Status</h1>
 
         {loading ? (
-          <p className="text-center text-gray-400">Loading…</p>
+          <p className="text-center text-slate-400">Loading…</p>
         ) : error ? (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+          <div className="alert-error">{error}</div>
         ) : !status ? (
           // Unknown/invalid code — plain message, nothing about the code itself.
-          <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
+          <div className="empty-state">
             <p className="text-lg font-medium">Hindi mahanap ang ticket.</p>
             <p className="mt-1 text-sm">Ticket not found.</p>
           </div>
         ) : (
-          <div className="rounded-2xl border-2 border-emerald-400 bg-white p-8 text-center shadow-sm">
+          <div className="card p-8 text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-600">
               Queue Ticket
             </p>
-            <p className="mt-2 text-7xl font-bold text-gray-900">{status.ticket_number}</p>
+            <p className="mt-2 text-7xl font-bold text-slate-950">{status.ticket_number}</p>
 
             <div className="mt-4 inline-block rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
               {TICKET_STATUS_LABEL[status.status] ?? status.status}
@@ -80,7 +83,7 @@ export function Checkin() {
               <Row label="Petsa at Oras" value={formatSlot(status.slot_datetime)} />
             </dl>
 
-            <p className="mt-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="alert-warn mt-6">
               Ang pahinang ito ay para tingnan lamang ang status — hindi ito nagche-check in sa
               inyo. Mangyaring mag-check in sa reception ng MHO pagdating. / This page is read-only
               and does not check you in — please check in at the MHO reception on arrival.
@@ -95,8 +98,8 @@ export function Checkin() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="text-right font-medium text-gray-800">{value}</dd>
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-right font-medium text-slate-900">{value}</dd>
     </div>
   )
 }

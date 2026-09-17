@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../../components/DashboardLayout'
 import { TicketCard } from '../../components/TicketCard'
 import {
@@ -111,6 +111,7 @@ export function BookAppointment() {
   const [booking, setBooking] = useState<BookingResult | null>(null)
   const [bookingBusy, setBookingBusy] = useState(false)
   const [error, setError] = useState('')
+  const [smsWarning, setSmsWarning] = useState('')
 
   useEffect(() => {
     fetchServices()
@@ -205,9 +206,13 @@ export function BookAppointment() {
     if (!selectedSlot || hasConflict) return
     setBookingBusy(true)
     setError('')
+    setSmsWarning('')
     try {
       const result = await bookAppointment(selectedSlot.id)
       setBooking(result)
+      if (result.smsNotificationFailed) {
+        setSmsWarning('Appointment booked successfully, but the SMS notification could not be sent.')
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -228,13 +233,19 @@ export function BookAppointment() {
             providerName={selectedSlot?.providers.profiles.full_name ?? ''}
             qrCode={booking.qr_code}
           >
-            <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="alert-warn mt-4">
               Mangyaring dumating ng 15 minuto bago ang inyong appointment.
             </div>
 
+            {smsWarning && (
+              <div className="alert-warn mt-4" role="status">
+                {smsWarning}
+              </div>
+            )}
+
             <button
               onClick={() => navigate('/patient')}
-              className="mt-6 w-full rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white hover:bg-emerald-700"
+              className="btn-primary mt-6 w-full"
             >
               Bumalik sa Dashboard
             </button>
@@ -245,32 +256,32 @@ export function BookAppointment() {
   }
 
   return (
-    <DashboardLayout title="Mag-book ng Appointment">
+    <DashboardLayout title="Book an Appointment">
       {/* Progress */}
-      <div className="mb-8 flex items-center gap-2 text-sm">
-        {['Serbisyo', 'Petsa', 'Oras', 'Kumpirma'].map((label, i) => (
+      <div className="mb-8 flex w-full gap-2 overflow-x-auto pb-2 text-sm">
+        {['Service', 'Date', 'Time', 'Confirm'].map((label, i) => (
           <div key={label} className="flex items-center gap-2">
             <span
               className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
                 step > i + 1
-                  ? 'bg-emerald-600 text-white'
+                  ? 'bg-emerald-700 text-white'
                   : step === i + 1
                     ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-gray-100 text-gray-400'
+                    : 'bg-slate-100 text-slate-400'
               }`}
             >
               {i + 1}
             </span>
-            <span className={step === i + 1 ? 'font-semibold text-gray-800' : 'text-gray-400'}>
+            <span className={step === i + 1 ? 'font-semibold text-slate-900' : 'text-slate-400'}>
               {label}
             </span>
-            {i < 3 && <span className="text-gray-300">›</span>}
+            {i < 3 && <span className="text-slate-300">›</span>}
           </div>
         ))}
       </div>
 
       {error && (
-        <div className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div className="alert-error mb-6" role="alert">
           {error}
         </div>
       )}
@@ -278,21 +289,24 @@ export function BookAppointment() {
       {/* ── Step 1: Service ── */}
       {step === 1 && (
         <div>
-          <h2 className="mb-4 text-lg font-semibold text-gray-800">Piliin ang serbisyo</h2>
+          <Link
+            to="/"
+            className="mb-3 inline-flex text-sm font-medium text-emerald-800 hover:text-emerald-950"
+          >
+            ← Back to Home
+          </Link>
+          <h2 className="mb-4 section-title">Choose a Service</h2>
           {servicesLoading ? (
-            <p className="text-gray-400">Loading…</p>
+            <p className="text-slate-400">Loading…</p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {services.map((svc) => (
                 <button
                   key={svc.id}
                   onClick={() => handleSelectService(svc)}
-                  className="rounded-xl border-2 border-gray-200 bg-white p-5 text-left transition-colors hover:border-emerald-400 hover:bg-emerald-50"
+                  className="card card-interactive flex min-h-28 items-center justify-center p-6 text-center"
                 >
-                  <p className="text-lg font-semibold text-gray-800">{svc.name}</p>
-                  {svc.description && (
-                    <p className="mt-1 text-sm text-gray-500">{svc.description}</p>
-                  )}
+                  <p className="text-xl font-semibold text-slate-900">{svc.name}</p>
                 </button>
               ))}
             </div>
@@ -309,7 +323,7 @@ export function BookAppointment() {
                 setStep(1)
                 setError('')
               }}
-              className="text-sm text-emerald-700 hover:underline"
+              className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
             >
               ← Baguhin ang serbisyo
             </button>
@@ -318,18 +332,18 @@ export function BookAppointment() {
             </span>
           </div>
 
-          <h2 className="mb-4 text-lg font-semibold text-gray-800">Piliin ang petsa</h2>
+          <h2 className="mb-4 section-title">Piliin ang petsa</h2>
 
           {/* Month navigation */}
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <button
               onClick={() => setView(addMonths(view, -1))}
               disabled={monthIndex(view) <= monthIndex(currentMonth)}
-              className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 enabled:hover:bg-gray-50 disabled:opacity-40"
+              className="btn-subtle min-h-9 px-3 py-1"
             >
               ← Nakaraan
             </button>
-            <span className="text-base font-semibold text-gray-800">
+            <span className="text-base font-semibold text-slate-900">
               {new Date(view.year, view.month, 1).toLocaleDateString('en-PH', {
                 month: 'long',
                 year: 'numeric',
@@ -338,21 +352,21 @@ export function BookAppointment() {
             <button
               onClick={() => setView(addMonths(view, 1))}
               disabled={monthIndex(view) >= monthIndex(maxMonth)}
-              className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 enabled:hover:bg-gray-50 disabled:opacity-40"
+              className="btn-subtle min-h-9 px-3 py-1"
             >
               Susunod →
             </button>
           </div>
 
           {/* Weekday header */}
-          <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-gray-500">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500 sm:gap-2">
             {WEEKDAYS.map((d) => (
               <div key={d}>{d}</div>
             ))}
           </div>
 
           {/* Day grid */}
-          <div className="mt-2 grid grid-cols-7 gap-2">
+          <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-2">
             {/* leading blanks so day 1 lands on its weekday */}
             {Array.from({ length: new Date(view.year, view.month, 1).getDay() }).map((_, i) => (
               <div key={`blank-${i}`} />
@@ -370,10 +384,10 @@ export function BookAppointment() {
                   onClick={() => handleSelectDate(dateStr)}
                   disabled={disabled}
                   aria-disabled={disabled}
-                  className={`flex min-h-[4.5rem] flex-col items-center justify-center rounded-lg border p-1 text-center ${
+                  className={`flex min-h-16 min-w-0 flex-col items-center justify-center rounded-xl border p-1 text-center text-xs transition sm:min-h-[4.5rem] ${
                     disabled
-                      ? 'cursor-not-allowed border-dashed border-gray-200 bg-gray-50 text-gray-400 line-through'
-                      : 'border-gray-300 bg-white text-gray-800 hover:border-emerald-500 hover:bg-emerald-50'
+                      ? 'cursor-not-allowed border-dashed border-slate-200 bg-slate-50 text-slate-400 line-through'
+                      : 'border-emerald-100 bg-white text-slate-800 hover:border-emerald-500 hover:bg-emerald-50'
                   }`}
                 >
                   <span className="text-base font-semibold">{day}</span>
@@ -381,7 +395,7 @@ export function BookAppointment() {
                       days show an explicit reason ("—" past, "Walang schedule",
                       "Puno", or "Lipas na") and are line-through. */}
                   {availLoading ? (
-                    <span className="text-[10px] text-gray-300">…</span>
+                    <span className="text-[10px] text-slate-300">…</span>
                   ) : isPast ? (
                     <span className="text-[10px]">—</span>
                   ) : remaining > 0 ? (
@@ -395,7 +409,7 @@ export function BookAppointment() {
               )
             })}
           </div>
-          <p className="mt-3 text-xs text-gray-400">
+          <p className="mt-3 text-xs text-slate-500">
             Naka-disable ang mga araw na hindi mai-book: <span className="font-medium">“—”</span>{' '}
             nakaraang petsa · <span className="font-medium">“Walang schedule”</span> walang oras na
             binuksan para sa serbisyong ito · <span className="font-medium">“Puno”</span> puno na
@@ -415,32 +429,32 @@ export function BookAppointment() {
                 setSelectedSlot(null)
                 setError('')
               }}
-              className="text-sm text-emerald-700 hover:underline"
+              className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
             >
               ← Baguhin ang petsa
             </button>
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
               {selectedService?.name}
             </span>
-            <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
               {longDateLabel(selectedDate)}
             </span>
           </div>
 
-          <h2 className="mb-4 text-lg font-semibold text-gray-800">Piliin ang oras</h2>
+          <h2 className="mb-4 section-title">Piliin ang oras</h2>
 
           {slotsLoading ? (
-            <p className="text-gray-400">Hinahanap ang available na oras…</p>
+            <p className="text-slate-400">Hinahanap ang available na oras…</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {slots.map((slot) => (
                 <button
                   key={slot.id}
                   onClick={() => handleSelectSlot(slot)}
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-emerald-500 hover:bg-emerald-50"
+                  className="btn-subtle"
                 >
                   {slotTime(slot.slot_datetime)}
-                  <span className="ml-1 text-xs text-gray-400">
+                  <span className="ml-1 text-xs text-slate-400">
                     · {slot.providers.profiles.full_name}
                   </span>
                 </button>
@@ -453,8 +467,8 @@ export function BookAppointment() {
       {/* ── Step 4: Confirm ── */}
       {step === 4 && selectedSlot && (
         <div className="mx-auto max-w-md">
-          <h2 className="mb-4 text-lg font-semibold text-gray-800">Kumpirmahin ang appointment</h2>
-          <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
+          <h2 className="mb-4 section-title">Kumpirmahin ang appointment</h2>
+          <div className="card card-pad space-y-4">
             <InfoRow label="Serbisyo" value={selectedService?.name ?? ''} />
             <InfoRow label="Doktor" value={selectedSlot.providers.profiles.full_name} />
             <InfoRow label="Petsa at Oras" value={formatSlot(selectedSlot.slot_datetime)} />
@@ -462,7 +476,7 @@ export function BookAppointment() {
 
           {hasConflict && (
             <div
-              className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800"
+              className="alert-warn mt-4"
               role="alert"
             >
               {conflictSameServiceDate
@@ -478,14 +492,14 @@ export function BookAppointment() {
                 setSelectedSlot(null)
                 setError('')
               }}
-              className="rounded-xl border border-gray-300 px-6 py-3 font-medium text-gray-700 hover:bg-gray-50"
+              className="btn-secondary"
             >
               ← Baguhin ang oras
             </button>
             <button
               onClick={handleConfirm}
               disabled={bookingBusy || hasConflict}
-              className="flex-1 rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="btn-primary flex-1"
             >
               {bookingBusy ? 'Nag-bo-book…' : 'I-confirm ang Appointment'}
             </button>
@@ -498,9 +512,9 @@ export function BookAppointment() {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium text-gray-800">{value}</span>
+    <div className="flex justify-between gap-4 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-right font-medium text-slate-900">{value}</span>
     </div>
   )
 }

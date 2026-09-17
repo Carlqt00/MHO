@@ -4,6 +4,9 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
+import { ChangePassword } from './pages/ChangePassword'
 import { Checkin } from './pages/Checkin'
 import { PatientDashboard } from './pages/dashboards/PatientDashboard'
 import { BookAppointment } from './pages/patient/BookAppointment'
@@ -19,6 +22,7 @@ import { AdminAnnouncements } from './pages/admin/AdminAnnouncements'
 import { AdminNotifications } from './pages/admin/AdminNotifications'
 import { AdminReports } from './pages/admin/AdminReports'
 import { AdminQueue } from './pages/admin/AdminQueue'
+import { AdminPasswordResets } from './pages/admin/AdminPasswordResets'
 
 function App() {
   return (
@@ -28,8 +32,18 @@ function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           {/* Public, no-login QR check-in status page */}
           <Route path="/checkin/:code" element={<Checkin />} />
+          <Route
+            path="/change-password"
+            element={
+              <ProtectedRoute allow={['patient', 'doctor', 'nurse', 'staff', 'admin']}>
+                <ChangePassword />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/patient"
@@ -143,6 +157,14 @@ function App() {
               element={
                 <ProtectedRoute allow={['admin']}>
                   <AdminQueue />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="password-resets"
+              element={
+                <ProtectedRoute allow={['admin']}>
+                  <AdminPasswordResets />
                 </ProtectedRoute>
               }
             />

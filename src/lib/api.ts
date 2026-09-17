@@ -29,6 +29,7 @@ export interface BookingResult {
   queue_position: number
   qr_code: string
   slot_datetime: string
+  smsNotificationFailed?: boolean
 }
 
 export interface Appointment {
@@ -188,10 +189,16 @@ export async function bookAppointment(slotId: string): Promise<BookingResult> {
     }
     throw new Error(errorMessage(error, GENERIC_ERR))
   }
-  return data as BookingResult
+  const booking = data as BookingResult
+  const sms = await trySendAppointmentSms('appointment_booked', booking.appointment_id)
+  return { ...booking, smsNotificationFailed: !sms.success }
 }
 
-export async function cancelAppointment(appointmentId: string): Promise<void> {
+export interface SmsNotificationAttempt {
+  smsNotificationFailed: boolean
+}
+
+export async function cancelAppointment(appointmentId: string): Promise<SmsNotificationAttempt> {
   const { error } = await supabase.rpc('cancel_appointment', { p_appointment_id: appointmentId })
   if (error) {
     const raw = (error as { message?: string }).message ?? ''
@@ -206,6 +213,138 @@ export async function cancelAppointment(appointmentId: string): Promise<void> {
     if (raw.includes('ERR_NOT_FOUND'))
       throw new Error('Hindi mahanap ang appointment. / Appointment not found.')
     throw new Error(errorMessage(error, GENERIC_ERR))
+  }
+  const sms = await trySendAppointmentSms('appointment_cancelled', appointmentId)
+  return { smsNotificationFailed: !sms.success }
+}
+
+export type AppointmentSmsEvent = 'appointment_booked' | 'appointment_cancelled'
+
+export interface AppointmentSmsResult {
+  success: boolean
+  notification_log_id?: string
+  http_status?: number
+  response?: unknown
+}
+
+export async function sendAppointmentSms(
+  event: AppointmentSmsEvent,
+  appointmentId: string
+): Promise<AppointmentSmsResult> {
+  const { data, error } = await supabase.functions.invoke('send-sms', {
+    body: { event, appointment_id: appointmentId },
+  })
+  if (error) {
+    let message = ''
+    const context = (error as { context?: unknown }).context
+    if (context instanceof Response) {
+      try {
+        const parsed = await context.json()
+        if (parsed && typeof parsed.error === 'string') message = parsed.error
+      } catch {
+        // Keep the safe generic fallback below.
+      }
+    }
+    throw new Error(message || errorMessage(error, 'SMS notification could not be sent.'))
+  }
+  return data as AppointmentSmsResult
+}
+
+export type NotificationStatus = 'pending' | 'sent' | 'failed'
+export type NotificationType = 'sms' | 'email'
+
+export interface NotificationLog {
+  id: string
+  type: NotificationType
+  recipient: string
+  message: string
+  status: NotificationStatus
+  created_at: string
+  sent_at: string | null
+  error_message: string | null
+}
+
+export interface NotificationSummary {
+  sent: number
+  pending: number
+  failed: number
+}
+
+export async function fetchNotificationLogs(
+  status: NotificationStatus | 'all' = 'all'
+): Promise<NotificationLog[]> {
+  let query = supabase
+    .from('notification_logs')
+    .select('id, type, recipient, message, status, created_at, sent_at, error_message')
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  if (status !== 'all') query = query.eq('status', status)
+
+  const { data, error } = await query
+  if (error) throw new Error(errorMessage(error, 'Failed to load notification logs.'))
+  return data as NotificationLog[]
+}
+
+export async function fetchNotificationSummary(): Promise<NotificationSummary> {
+  const [sent, pending, failed] = await Promise.all([
+    supabase
+      .from('notification_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'sent'),
+    supabase
+      .from('notification_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+    supabase
+      .from('notification_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'failed'),
+  ])
+
+  for (const result of [sent, pending, failed]) {
+    if (result.error) throw new Error(errorMessage(result.error, 'Failed to load notification totals.'))
+  }
+
+  return {
+    sent: sent.count ?? 0,
+    pending: pending.count ?? 0,
+    failed: failed.count ?? 0,
+  }
+}
+
+export async function sendManualSms(input: {
+  recipient: string
+  message: string
+}): Promise<AppointmentSmsResult> {
+  const { data, error } = await supabase.functions.invoke('send-sms', {
+    body: { recipient: input.recipient, message: input.message },
+  })
+  if (error) {
+    let message = ''
+    const context = (error as { context?: unknown }).context
+    if (context instanceof Response) {
+      try {
+        const parsed = await context.json()
+        if (parsed && typeof parsed.error === 'string') message = parsed.error
+      } catch {
+        // Keep the safe generic fallback below.
+      }
+    }
+    throw new Error(message || errorMessage(error, 'SMS notification could not be sent.'))
+  }
+  return data as AppointmentSmsResult
+}
+
+async function trySendAppointmentSms(
+  event: AppointmentSmsEvent,
+  appointmentId: string
+): Promise<AppointmentSmsResult> {
+  try {
+    return await sendAppointmentSms(event, appointmentId)
+  } catch (err) {
+    console.warn('Appointment SMS notification failed:', err)
+    return { success: false }
   }
 }
 
@@ -394,6 +533,33 @@ async function callAdminFunction<T>(name: string, body: object): Promise<T> {
   return data as T
 }
 
+async function callPublicFunction<T>(name: string, body: object): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, {
+    body: body as Record<string, unknown>,
+  })
+  if (error) {
+    if (import.meta.env.DEV) {
+      const context = (error as { context?: unknown }).context
+      const status = context instanceof Response ? context.status : undefined
+      let responseBody = ''
+      if (context instanceof Response) {
+        try {
+          responseBody = await context.clone().text()
+        } catch {
+          responseBody = ''
+        }
+      }
+      console.error(`${name} failed`, {
+        message: error.message,
+        status,
+        responseBody,
+      })
+    }
+    throw new Error(errorMessage(error, GENERIC_ERR))
+  }
+  return data as T
+}
+
 export interface CreateUserInput {
   email: string
   fullName: string
@@ -426,6 +592,79 @@ export async function adminUpdateRole(
   input: UpdateRoleInput
 ): Promise<{ userId: string; role: Role }> {
   return callAdminFunction('admin-update-role', input)
+}
+
+// ------------------------------------------------------------
+// Password reset requests
+// ------------------------------------------------------------
+export interface PasswordResetRequest {
+  id: string
+  status: 'pending' | 'approved' | 'completed' | 'rejected' | 'expired' | 'failed'
+  requested_at: string
+  approved_at: string | null
+  completed_at: string | null
+  token_expires_at: string | null
+  processed_at: string | null
+  profiles: {
+    full_name: string
+    email: string | null
+    role: Role
+  }
+}
+
+export async function submitPasswordResetRequest(input: {
+  email: string
+  fullName: string
+  phone: string
+}): Promise<{ verified: boolean; resetToken?: string; expiresAt?: string }> {
+  const body = {
+    email: input.email.trim().toLowerCase(),
+    fullName: input.fullName.trim(),
+    phone: input.phone.trim(),
+  }
+  if (import.meta.env.DEV) {
+    console.info('password-reset-request browser payload', JSON.stringify({
+      full_name: body.fullName,
+      phone: body.phone,
+      email: body.email,
+    }))
+  }
+  const result = await callPublicFunction<{
+    verified: boolean
+    resetToken?: string
+    expiresAt?: string
+  }>('password-reset-request', body)
+  if (import.meta.env.DEV) {
+    console.info('password-reset-request browser response', JSON.stringify({
+      verified: result.verified,
+      hasResetToken: typeof result.resetToken === 'string' && result.resetToken.length > 0,
+      hasExpiresAt: typeof result.expiresAt === 'string' && result.expiresAt.length > 0,
+    }))
+  }
+  return result
+}
+
+export async function completePasswordReset(input: {
+  resetToken: string
+  newPassword: string
+}): Promise<{ completed: true }> {
+  return callPublicFunction('password-reset-complete', input)
+}
+
+export async function fetchPasswordResetRequests(): Promise<PasswordResetRequest[]> {
+  const { data, error } = await supabase
+    .from('password_reset_requests')
+    .select(
+      `
+      id, status, requested_at, approved_at, completed_at, token_expires_at, processed_at,
+      profiles:profiles!password_reset_requests_profile_id_fkey!inner ( full_name, email, role )
+    `
+    )
+    .order('requested_at', { ascending: false })
+    .limit(100)
+
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return data as unknown as PasswordResetRequest[]
 }
 
 // ------------------------------------------------------------
