@@ -34,10 +34,10 @@ Notes (verified 2026-09-19 against the live gateway):
 Either:
 
 ```bash
-supabase db push            # applies supabase/migrations/0021_*.sql
+supabase db push            # applies 0021, 0022, 0023 in order
 ```
 
-or paste `supabase/migrations/0021_appointment_actions_and_sms.sql` into the
+or paste `supabase/migrations/0023_appointment_actions_and_sms.sql` (after `0021_daily_service_capacity.sql` and `0022_sms_inbox.sql`, in that order) into the
 Dashboard → **SQL Editor** and run it (that's how earlier migrations were applied).
 
 It adds: `reschedule_appointment`, `set_appointment_status`, an updated
