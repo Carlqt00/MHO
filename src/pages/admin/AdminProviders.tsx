@@ -11,6 +11,9 @@ import {
   generateSlots,
   fetchExceptionConflicts,
   cancelAppointment,
+  fetchOpenSlots,
+  rescheduleAppointment,
+  type OpenSlot,
   type ProviderWithAvailability,
   type Service,
   type TimeOff,
@@ -336,6 +339,29 @@ function TimeOffSection({
     }
   }
 
+  // Move one stranded appointment to a slot the admin picked in the dialog,
+  // then re-run the same conflict query to refresh. The patient is texted.
+  const rescheduleOne = async (id: string, slotId: string) => {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await rescheduleAppointment(id, slotId)
+      if (result.smsNotificationFailed) {
+        setNoticeKind('warn')
+        setNotice('Appointment rescheduled, but the SMS notification could not be sent.')
+      } else {
+        setNoticeKind('success')
+        setNotice(`Appointment moved to ${formatSlotSample(result.slot_datetime)}. The patient has been texted.`)
+      }
+      setConflicts(await fetchExceptionConflicts(scope || null, date))
+    } catch (e) {
+      setError(errorMessage(e, 'Could not reschedule the appointment.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Cancel one stranded appointment, then re-run the same query to refresh.
   const cancelOne = async (id: string) => {
     setBusy(true)
@@ -487,7 +513,12 @@ function TimeOffSection({
                     {notice}
                   </p>
                 )}
-                <ConflictList conflicts={conflicts} onCancel={cancelOne} busy={busy} />
+                <ConflictList
+                  conflicts={conflicts}
+                  onCancel={cancelOne}
+                  onReschedule={rescheduleOne}
+                  busy={busy}
+                />
               </>
             )}
             <button
@@ -527,33 +558,173 @@ function TimeOffSection({
 function ConflictList({
   conflicts,
   onCancel,
+  onReschedule,
   busy,
 }: {
   conflicts: ExceptionConflict[]
   onCancel?: (id: string) => void
+  onReschedule?: (id: string, slotId: string) => Promise<void>
   busy?: boolean
 }) {
+  const [openId, setOpenId] = useState<string | null>(null)
   return (
     <ul className="mt-3 divide-y divide-black/5">
       {conflicts.map((c) => (
-        <li key={c.appointment_id} className="flex items-center justify-between gap-3 py-2 text-sm">
-          <span className="text-gray-700">
-            <span className="font-medium">{c.patient_name}</span> · {c.service_name} ·{' '}
-            {c.provider_name} · {formatSlotSample(c.slot_datetime)}
-            <span className="ml-1 text-xs text-slate-400">({c.status})</span>
-          </span>
-          {onCancel && (
-            <button
-              onClick={() => onCancel(c.appointment_id)}
-              disabled={busy}
-              className="btn-danger min-h-8 shrink-0 px-2 py-1 text-xs"
-            >
-              Cancel
-            </button>
+        <li key={c.appointment_id} className="py-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-gray-700">
+              <span className="font-medium">{c.patient_name}</span> · {c.service_name} ·{' '}
+              {c.provider_name} · {formatSlotSample(c.slot_datetime)}
+              <span className="ml-1 text-xs text-slate-400">({c.status})</span>
+            </span>
+            <span className="flex shrink-0 gap-1">
+              {onReschedule && c.status === 'booked' && (
+                <button
+                  onClick={() => setOpenId(openId === c.appointment_id ? null : c.appointment_id)}
+                  disabled={busy}
+                  className="btn-subtle min-h-8 px-2 py-1 text-xs"
+                >
+                  {openId === c.appointment_id ? 'Close' : 'Reschedule'}
+                </button>
+              )}
+              {onCancel && (
+                <button
+                  onClick={() => onCancel(c.appointment_id)}
+                  disabled={busy}
+                  className="btn-danger min-h-8 px-2 py-1 text-xs"
+                >
+                  Cancel
+                </button>
+              )}
+            </span>
+          </div>
+          {onReschedule && openId === c.appointment_id && (
+            <ReschedulePicker
+              conflict={c}
+              busy={busy}
+              onPick={async (slotId) => {
+                await onReschedule(c.appointment_id, slotId)
+                setOpenId(null)
+              }}
+            />
           )}
         </li>
       ))}
     </ul>
+  )
+}
+
+// Admin picks a new date, sees that day's open slots for the SAME service
+// (any provider), and confirms one. Mirrors the patient's Time step; the RPC
+// re-validates everything (service match, not booked, not an exception day).
+function ReschedulePicker({
+  conflict,
+  busy,
+  onPick,
+}: {
+  conflict: ExceptionConflict
+  busy?: boolean
+  onPick: (slotId: string) => Promise<void>
+}) {
+  const [date, setDate] = useState(() => addDays(todayManila(), 1))
+  const [slots, setSlots] = useState<OpenSlot[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState<OpenSlot | null>(null)
+  const [error, setError] = useState('')
+
+  // Same shape as the booking wizard's month loader: the state writes live in
+  // an async loader, not the effect body, and a stale load never lands.
+  useEffect(() => {
+    if (!date) return
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      setSelected(null)
+      setError('')
+      try {
+        const rows = await fetchOpenSlots(conflict.service_id, date)
+        if (!cancelled) setSlots(rows)
+      } catch (e) {
+        if (!cancelled) setError(errorMessage(e, 'Could not load open slots.'))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [conflict.service_id, date])
+
+  return (
+    <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block text-xs">
+          <span className="label">New date</span>
+          <input
+            type="date"
+            value={date}
+            min={todayManila()}
+            onChange={(e) => setDate(e.target.value)}
+            className="form-control"
+          />
+        </label>
+        <span className="text-xs text-slate-500">
+          Open {conflict.service_name} slots on that day, any provider.
+        </span>
+      </div>
+
+      {error && (
+        <p className="mt-2 text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <p className="mt-2 text-xs text-slate-400">Loading open slots…</p>
+      ) : slots.length === 0 ? (
+        <p className="mt-2 text-xs text-slate-400">No open slots on this date. Try another day.</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {slots.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setSelected(s)}
+              disabled={busy}
+              className={`min-h-8 rounded-lg border px-2.5 py-1 text-xs ${
+                selected?.id === s.id
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300'
+              }`}
+            >
+              {formatSlotSample(s.slot_datetime)}
+              <span className={`ml-1 ${selected?.id === s.id ? 'text-emerald-100' : 'text-slate-400'}`}>
+                · {s.providers.profiles.full_name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-600">
+            Move <span className="font-medium">{conflict.patient_name}</span> to{' '}
+            <span className="font-medium">{formatSlotSample(selected.slot_datetime)}</span> with{' '}
+            {selected.providers.profiles.full_name}?
+          </span>
+          <button
+            type="button"
+            onClick={() => onPick(selected.id)}
+            disabled={busy}
+            className="btn-primary min-h-8 px-3 py-1 text-xs"
+          >
+            {busy ? 'Moving…' : 'Confirm reschedule'}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

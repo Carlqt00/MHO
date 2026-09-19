@@ -35,6 +35,7 @@ export interface BookingResult {
 export interface Appointment {
   id: string
   status: string
+  service_id: string
   services: { name: string }
   providers: { profiles: { full_name: string } }
   time_slots: { slot_datetime: string }
@@ -147,6 +148,7 @@ export async function fetchServiceSlotStatus(
 }
 
 export interface ActiveBooking {
+  id: string
   service_id: string
   slot_datetime: string
 }
@@ -156,16 +158,18 @@ export interface ActiveBooking {
 export async function fetchMyActiveBookings(): Promise<ActiveBooking[]> {
   const { data, error } = await supabase
     .from('appointments')
-    .select('service_id, time_slots!inner ( slot_datetime )')
+    .select('id, service_id, time_slots!inner ( slot_datetime )')
     .not('status', 'eq', 'cancelled')
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
   return (
     (data ?? []) as unknown as {
+      id: string
       service_id: string
       time_slots: { slot_datetime: string }
     }[]
   ).map((row) => ({
+    id: row.id,
     service_id: row.service_id,
     slot_datetime: row.time_slots.slot_datetime,
   }))
@@ -218,7 +222,100 @@ export async function cancelAppointment(appointmentId: string): Promise<SmsNotif
   return { smsNotificationFailed: !sms.success }
 }
 
-export type AppointmentSmsEvent = 'appointment_booked' | 'appointment_cancelled'
+export interface RescheduleResult {
+  appointment_id: string
+  previous_slot_datetime: string
+  slot_datetime: string
+  provider_id: string
+  ticket_number: string
+  queue_position: number
+  qr_code: string
+  smsNotificationFailed?: boolean
+}
+
+// Move a booked appointment to another open slot of the SAME service
+// (reschedule_appointment RPC, migration 0021). Patient for their own booking,
+// or staff/admin for anyone. The RPC swaps the slots race-safely and re-issues
+// the queue ticket when the provider/day changes; then the patient is texted.
+export async function rescheduleAppointment(
+  appointmentId: string,
+  newSlotId: string
+): Promise<RescheduleResult> {
+  const { data, error } = await supabase.rpc('reschedule_appointment', {
+    p_appointment_id: appointmentId,
+    p_new_slot_id: newSlotId,
+  })
+  if (error) {
+    const raw = (error as { message?: string }).message ?? ''
+    if (raw.includes('ERR_ALREADY_BOOKED'))
+      throw new Error(
+        'Nakuha na po ng iba ang slot na ito. Pumili po ng ibang oras. / This slot was just taken — please choose another time.'
+      )
+    if (raw.includes('ERR_ON_EXCEPTION_DATE'))
+      throw new Error(
+        'Paumanhin, hindi na available ang oras na ito — maaaring may holiday o na-adjust ang schedule ng provider. Pumili po ng ibang slot. / Sorry, this time is no longer available — please choose another slot.'
+      )
+    if (raw.includes('ERR_INVALID_STATUS'))
+      throw new Error(
+        'Hindi na maaaring ilipat ang appointment na ito. / This appointment can no longer be rescheduled.'
+      )
+    if (raw.includes('ERR_SERVICE_MISMATCH'))
+      throw new Error(
+        'Ibang serbisyo ang napiling oras. / The chosen time is for a different service.'
+      )
+    if (raw.includes('ERR_SLOT_PAST'))
+      throw new Error('Lipas na ang oras na ito. / That time has already passed.')
+    if (raw.includes('ERR_SAME_SLOT'))
+      throw new Error('Ito na ang kasalukuyang oras ng appointment. / That is already the current time.')
+    if (raw.includes('ERR_FORBIDDEN'))
+      throw new Error(
+        'Wala kang pahintulot na ilipat ang appointment na ito. / You are not allowed to reschedule this appointment.'
+      )
+    if (raw.includes('ERR_NOT_FOUND'))
+      throw new Error('Hindi mahanap ang appointment o oras. / Appointment or slot not found.')
+    throw new Error(errorMessage(error, GENERIC_ERR))
+  }
+  const result = data as RescheduleResult
+  const sms = await trySendAppointmentSms('appointment_rescheduled', appointmentId)
+  return { ...result, smsNotificationFailed: !sms.success }
+}
+
+export type ReceptionStatus = 'checked_in' | 'no_show'
+
+// Reception marks a patient as arrived (checked_in) or absent (no_show) —
+// set_appointment_status RPC (0021), nurse/staff/admin only. Texts the patient.
+export async function setAppointmentStatus(
+  appointmentId: string,
+  status: ReceptionStatus
+): Promise<SmsNotificationAttempt> {
+  const { error } = await supabase.rpc('set_appointment_status', {
+    p_appointment_id: appointmentId,
+    p_status: status,
+  })
+  if (error) {
+    const raw = (error as { message?: string }).message ?? ''
+    if (raw.includes('ERR_INVALID_STATUS'))
+      throw new Error('This appointment is not in a state that allows that change.')
+    if (raw.includes('ERR_FORBIDDEN'))
+      throw new Error('Only clinic personnel can update appointment status.')
+    if (raw.includes('ERR_NOT_FOUND')) throw new Error('Appointment not found.')
+    throw new Error(errorMessage(error, GENERIC_ERR))
+  }
+  const sms = await trySendAppointmentSms(
+    status === 'checked_in' ? 'appointment_checked_in' : 'appointment_no_show',
+    appointmentId
+  )
+  return { smsNotificationFailed: !sms.success }
+}
+
+export type AppointmentSmsEvent =
+  | 'appointment_booked'
+  | 'appointment_cancelled'
+  | 'appointment_rescheduled'
+  | 'appointment_checked_in'
+  | 'appointment_served'
+  | 'appointment_no_show'
+  | 'queue_now_serving'
 
 export interface AppointmentSmsResult {
   success: boolean
@@ -250,12 +347,15 @@ export async function sendAppointmentSms(
   return data as AppointmentSmsResult
 }
 
-export type NotificationStatus = 'pending' | 'sent' | 'failed'
+// 'sent' = accepted/transmitted by the gateway; 'delivered' = handset receipt
+// confirmed via the itextmo-webhook (migration 0021).
+export type NotificationStatus = 'pending' | 'sent' | 'delivered' | 'failed'
 export type NotificationType = 'sms' | 'email'
 
 export interface NotificationLog {
   id: string
   type: NotificationType
+  event: string | null
   recipient: string
   message: string
   status: NotificationStatus
@@ -266,6 +366,7 @@ export interface NotificationLog {
 
 export interface NotificationSummary {
   sent: number
+  delivered: number
   pending: number
   failed: number
 }
@@ -275,7 +376,7 @@ export async function fetchNotificationLogs(
 ): Promise<NotificationLog[]> {
   let query = supabase
     .from('notification_logs')
-    .select('id, type, recipient, message, status, created_at, sent_at, error_message')
+    .select('id, type, event, recipient, message, status, created_at, sent_at, error_message')
     .order('created_at', { ascending: false })
     .limit(100)
 
@@ -287,27 +388,23 @@ export async function fetchNotificationLogs(
 }
 
 export async function fetchNotificationSummary(): Promise<NotificationSummary> {
-  const [sent, pending, failed] = await Promise.all([
-    supabase
-      .from('notification_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'sent'),
-    supabase
-      .from('notification_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending'),
-    supabase
-      .from('notification_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'failed'),
+  const countOf = (status: NotificationStatus) =>
+    supabase.from('notification_logs').select('id', { count: 'exact', head: true }).eq('status', status)
+
+  const [sent, delivered, pending, failed] = await Promise.all([
+    countOf('sent'),
+    countOf('delivered'),
+    countOf('pending'),
+    countOf('failed'),
   ])
 
-  for (const result of [sent, pending, failed]) {
+  for (const result of [sent, delivered, pending, failed]) {
     if (result.error) throw new Error(errorMessage(result.error, 'Failed to load notification totals.'))
   }
 
   return {
     sent: sent.count ?? 0,
+    delivered: delivered.count ?? 0,
     pending: pending.count ?? 0,
     failed: failed.count ?? 0,
   }
@@ -356,6 +453,7 @@ export interface QueueTicket {
   appointments: {
     id: string
     provider_id: string
+    status: string
     services: { name: string }
     patients: { profiles: { full_name: string } }
     providers: { profiles: { full_name: string } }
@@ -399,15 +497,34 @@ export async function fetchTodayQueue(): Promise<QueueTicket[]> {
 }
 
 export interface AdvanceResult {
-  ticket_id: string
-  ticket_number: string
-  queue_position: number
+  // Absent when the queue was empty (only someone was finished, nobody called).
+  ticket_id?: string
+  ticket_number?: string
+  queue_position?: number
+  appointment_id?: string
+  // The now_serving appointment that was just marked served, if any.
+  served_appointment_id?: string | null
+  smsNotificationFailed?: boolean
 }
 
+// "Call next": finishes the current patient (served) and promotes the next
+// ticket. Then texts BOTH — a thank-you to the one served and "it's your turn"
+// to the one now being called. Either SMS failing never fails the advance.
 export async function advanceQueue(providerId: string): Promise<AdvanceResult | null> {
   const { data, error } = await supabase.rpc('advance_queue', { p_provider_id: providerId })
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
-  return data as AdvanceResult | null
+  const result = data as AdvanceResult | null
+  if (!result) return null
+
+  const sends: Promise<AppointmentSmsResult>[] = []
+  if (result.served_appointment_id) {
+    sends.push(trySendAppointmentSms('appointment_served', result.served_appointment_id))
+  }
+  if (result.appointment_id) {
+    sends.push(trySendAppointmentSms('queue_now_serving', result.appointment_id))
+  }
+  const outcomes = await Promise.all(sends)
+  return { ...result, smsNotificationFailed: outcomes.some((o) => !o.success) }
 }
 
 export interface AdminStats {
@@ -538,24 +655,28 @@ async function callPublicFunction<T>(name: string, body: object): Promise<T> {
     body: body as Record<string, unknown>,
   })
   if (error) {
-    if (import.meta.env.DEV) {
-      const context = (error as { context?: unknown }).context
-      const status = context instanceof Response ? context.status : undefined
-      let responseBody = ''
-      if (context instanceof Response) {
-        try {
-          responseBody = await context.clone().text()
-        } catch {
-          responseBody = ''
-        }
+    const context = (error as { context?: unknown }).context
+    // The function's own JSON `error` is already user-safe text (e.g.
+    // "Incorrect code…") — surface it instead of the generic fallback.
+    let message = ''
+    let responseBody = ''
+    if (context instanceof Response) {
+      try {
+        responseBody = await context.clone().text()
+        const parsed = JSON.parse(responseBody)
+        if (parsed && typeof parsed.error === 'string') message = parsed.error
+      } catch {
+        // body wasn't JSON — fall through to the generic message
       }
+    }
+    if (import.meta.env.DEV) {
       console.error(`${name} failed`, {
         message: error.message,
-        status,
+        status: context instanceof Response ? context.status : undefined,
         responseBody,
       })
     }
-    throw new Error(errorMessage(error, GENERIC_ERR))
+    throw new Error(message || errorMessage(error, GENERIC_ERR))
   }
   return data as T
 }
@@ -612,40 +733,44 @@ export interface PasswordResetRequest {
   }
 }
 
+export interface PasswordResetStart {
+  verified: boolean
+  // Opaque id the browser hands back with the SMS code. Not a secret by
+  // itself — the code (texted, never returned here) is the second factor.
+  requestId?: string
+  expiresAt?: string
+  phoneHint?: string // e.g. "+63••••••4567"
+  smsSent?: boolean
+  resent?: boolean // false when a still-valid code was sent < 60 s ago
+}
+
+// Step 1 of the SMS password reset: verify name + email + phone, then the
+// Edge Function texts a 6-digit code to the registered number.
 export async function submitPasswordResetRequest(input: {
   email: string
   fullName: string
   phone: string
-}): Promise<{ verified: boolean; resetToken?: string; expiresAt?: string }> {
+}): Promise<PasswordResetStart> {
   const body = {
     email: input.email.trim().toLowerCase(),
     fullName: input.fullName.trim(),
     phone: input.phone.trim(),
   }
-  if (import.meta.env.DEV) {
-    console.info('password-reset-request browser payload', JSON.stringify({
-      full_name: body.fullName,
-      phone: body.phone,
-      email: body.email,
-    }))
-  }
-  const result = await callPublicFunction<{
-    verified: boolean
-    resetToken?: string
-    expiresAt?: string
-  }>('password-reset-request', body)
+  const result = await callPublicFunction<PasswordResetStart>('password-reset-request', body)
   if (import.meta.env.DEV) {
     console.info('password-reset-request browser response', JSON.stringify({
       verified: result.verified,
-      hasResetToken: typeof result.resetToken === 'string' && result.resetToken.length > 0,
-      hasExpiresAt: typeof result.expiresAt === 'string' && result.expiresAt.length > 0,
+      hasRequestId: typeof result.requestId === 'string' && result.requestId.length > 0,
+      smsSent: result.smsSent,
     }))
   }
   return result
 }
 
+// Step 2: the code from the SMS + the new password.
 export async function completePasswordReset(input: {
-  resetToken: string
+  requestId: string
+  code: string
   newPassword: string
 }): Promise<{ completed: true }> {
   return callPublicFunction('password-reset-complete', input)
@@ -790,6 +915,7 @@ export interface ExceptionConflict {
   provider_name: string
   slot_datetime: string
   status: string
+  service_id: string // for the admin reschedule slot lookup (0021)
 }
 
 // Active appointments that an exception on p_date would strand. The SAME
@@ -816,6 +942,39 @@ export interface Announcement {
   body: string
   published: boolean
   created_at: string
+  // Set by send-announcement-sms after a broadcast (migration 0021).
+  sms_sent_at: string | null
+  sms_recipient_count: number | null
+}
+
+export interface AnnouncementSmsResult {
+  success: boolean
+  total: number // patients still owed this announcement at the start of the run
+  sent: number
+  failed: number
+  skipped: number // not attempted (time budget / cap / fatal gateway error)
+  message: string // the exact SMS text that went out
+}
+
+// Patients who would receive an announcement broadcast: role patient with a
+// canonical +639… number. Admin reads every profile via the staff/admin policy.
+export async function countAnnouncementSmsRecipients(): Promise<number> {
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'patient')
+    .like('phone', '+639%')
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return count ?? 0
+}
+
+// Explicit admin action — never a side effect of publishing. The Edge
+// Function fans out one SMS per patient and skips anyone already sent this
+// announcement, so re-running only reaches the ones still missing.
+export function sendAnnouncementSms(announcementId: string): Promise<AnnouncementSmsResult> {
+  return callAdminFunction<AnnouncementSmsResult>('send-announcement-sms', {
+    announcement_id: announcementId,
+  })
 }
 
 // Admin list — the "admin: manage announcements" policy is FOR ALL, so admins
@@ -823,7 +982,7 @@ export interface Announcement {
 export async function fetchAllAnnouncements(): Promise<Announcement[]> {
   const { data, error } = await supabase
     .from('announcements')
-    .select('id, title, body, published, created_at')
+    .select('id, title, body, published, created_at, sms_sent_at, sms_recipient_count')
     .order('created_at', { ascending: false })
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
@@ -835,7 +994,7 @@ export async function fetchAllAnnouncements(): Promise<Announcement[]> {
 export async function fetchPublishedAnnouncements(): Promise<Announcement[]> {
   const { data, error } = await supabase
     .from('announcements')
-    .select('id, title, body, published, created_at')
+    .select('id, title, body, published, created_at, sms_sent_at, sms_recipient_count')
     .eq('published', true)
     .order('created_at', { ascending: false })
     .limit(20)
@@ -942,7 +1101,7 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
     .from('appointments')
     .select(
       `
-      id, status,
+      id, status, service_id,
       services ( name ),
       providers ( profiles ( full_name ) ),
       time_slots ( slot_datetime ),
@@ -1060,7 +1219,7 @@ export async function fetchDoctorAppointments(
     .from('appointments')
     .select(
       `
-      id, status,
+      id, status, service_id,
       time_slots!inner ( slot_datetime ),
       services ( name ),
       patients ( profiles ( full_name, phone ) ),
@@ -1137,7 +1296,7 @@ export async function fetchMyAppointmentHistory(): Promise<Appointment[]> {
     .from('appointments')
     .select(
       `
-      id, status,
+      id, status, service_id,
       services ( name ),
       providers ( profiles ( full_name ) ),
       time_slots ( slot_datetime ),

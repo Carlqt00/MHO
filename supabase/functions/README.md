@@ -91,3 +91,71 @@ is on `services`). Rather than invent one, this is deferred. To add it, either:
 
 Either way, the same self-protection applies: an admin must not be able to
 deactivate their own account (enforce server-side like the role guard).
+
+---
+
+# SMS Edge Functions (iTextMo)
+
+All patient texts go through one gateway: **iTextMo**
+(<https://itextmo.netlify.app/documentation>) — an Android handset with the
+clinic SIM that drains an API queue at ~1 msg/sec. Every send is recorded in
+`public.notification_logs` (Administrator → Notifications).
+
+| Function | Auth | Purpose |
+|---|---|---|
+| `_shared/sms.ts` | — | `sendSms()` — writes the log row, calls `POST /v1/messages`, stores the gateway message id, flips the row to `sent`/`failed`. Used by every function below. |
+| `send-sms` | user JWT | Appointment lifecycle texts (`appointment_booked`, `appointment_cancelled`, `appointment_rescheduled`, `appointment_checked_in`, `appointment_served`, `appointment_no_show`, `queue_now_serving`) — message text is composed server-side from the appointment row. Patients may trigger booked/cancelled/rescheduled for their own appointment; nurse/staff/admin may trigger all. Also the admin free-text send (`{recipient, message}`). |
+| `send-announcement-sms` | admin JWT | Broadcast one **published** announcement to every patient with a `+639…` number. Explicit admin action with a recipient count. Resumable: patients already `sent`/`delivered` for that announcement are skipped. |
+| `password-reset-request` | public | Verifies name + email + phone, then texts a 6-digit code (15 min TTL, 60 s resend cooldown). The code is never returned to the browser. |
+| `password-reset-complete` | public | `{requestId, code, newPassword}` — 5 wrong codes void the request. |
+| `itextmo-webhook` | HMAC | Delivery receipts: `message.sent` / `message.delivered` / `message.failed` update the matching log row (by gateway id, falling back to `client_ref` = our log id). Answers the `webhook.verify` challenge. |
+
+## Secrets (`supabase secrets set …`)
+
+| Secret | Required | Notes |
+|---|---|---|
+| `ITEXTMO_API_KEY` | yes | The `sk_live_…` key — on the handset under Settings → Authentication → Password (the "Username"/device id is NOT needed; auth is `Authorization: Bearer <key>`). Rotate rather than re-pair. |
+| `ITEXTMO_ENDPOINT` | **yes for us** | Defaults to `https://api.itextmo.com/v1/messages`, but our handset is paired to a per-device backend: `https://itextmo-backend-dev.vercel.app/api/v1/messages` (note the `/api/v1` prefix; the phone's Settings screen shows only the host, and the non-`-dev` host 307-redirects here). Same contract: Bearer key, `Idempotency-Key` required, unknown body fields rejected. |
+| `ITEXTMO_WEBHOOK_SECRET` | strongly recommended | Returned when the webhook URL is saved. Without it the webhook accepts unsigned receipts (logged as a warning). |
+
+```bash
+supabase secrets set ITEXTMO_API_KEY=sk_live_… ITEXTMO_ENDPOINT=https://itextmo-backend-dev.vercel.app/api/v1/messages
+supabase secrets list   # shows names + digests only, never values
+```
+
+Local `.env` holds the same values as `ITEXTMO_BACKEND_URL` / `ITEXTMO_USERNAME` /
+`ITEXTMO_PASSWORD` for probing the gateway from a shell (`.env` is gitignored;
+the browser never reads these — only `VITE_*` vars are exposed).
+
+Verified 2026-09-19 with those credentials: `GET …/api/v1/device` shows the
+webhook already configured (`…/functions/v1/itextmo-webhook`, sent/delivered/
+failed/inbound, verified 2026-09-17) and `GET …/api/v1/messages` lists history.
+
+Without `ITEXTMO_API_KEY` every send fails with `SMS service is not configured.`
+and is logged as `failed` — the appointment action itself still succeeds; the UI
+shows a "…but the SMS notification could not be sent" warning.
+
+## Deploy
+
+```bash
+supabase functions deploy send-sms
+supabase functions deploy send-announcement-sms
+supabase functions deploy password-reset-request --no-verify-jwt   # public
+supabase functions deploy password-reset-complete --no-verify-jwt  # public
+supabase functions deploy itextmo-webhook --no-verify-jwt          # called by iTextMo, HMAC-signed
+```
+
+Then in the iTextMo app (Settings → Webhooks) or via `PUT /v1/webhook`, set the
+URL to `https://<project-ref>.supabase.co/functions/v1/itextmo-webhook` with
+`sent`, `delivered`, `failed` enabled, and store the returned secret as
+`ITEXTMO_WEBHOOK_SECRET`. `POST /v1/webhook/test` fires a signed `message.sent`
+to confirm the signature check.
+
+## Gateway limits worth knowing
+
+- 1 msg/sec per SIM, 1000-message queue, 2000/day quota, 5 msgs per recipient
+  per 10 min (20/day). An announcement to 1000+ patients takes ~17 minutes to
+  drain and may need a second "Send via SMS" click to finish.
+- A reply containing STOP/TIGIL blocklists that number; later sends fail with
+  `RECIPIENT_BLOCKED` (shown in the log's error column).
+- Gateway history is deleted after 7 days — `notification_logs` is the record.

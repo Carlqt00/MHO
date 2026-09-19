@@ -9,7 +9,7 @@ import {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const NEUTRAL_SUCCESS_MESSAGE =
-  'If the information matches an account, you can continue to create a new password.'
+  'If the information matches an account, a 6-digit code will be sent by SMS to the registered cellphone number.'
 
 function isValidEmail(value: string) {
   return EMAIL_RE.test(value.trim())
@@ -60,12 +60,24 @@ export function ForgotPassword() {
         fullName,
         phone: canonicalPhone,
       })
-      if (!result.verified || !result.resetToken) {
+      if (!result.verified || !result.requestId) {
         setError('We could not verify the account information. Please check your details or contact MHO.')
         return
       }
+      if (!result.smsSent) {
+        setError(
+          'Na-verify ang account ninyo, pero hindi maipadala ang SMS code ngayon. Pakisubukan muli mamaya o makipag-ugnayan sa MHO. / Your account was verified, but the SMS code could not be sent right now. Please try again later or contact MHO.'
+        )
+        return
+      }
       setSent(true)
-      navigate('/reset-password', { state: { resetToken: result.resetToken } })
+      navigate('/reset-password', {
+        state: {
+          requestId: result.requestId,
+          phoneHint: result.phoneHint ?? '',
+          expiresAt: result.expiresAt ?? '',
+        },
+      })
     } catch {
       setError('Could not submit the password reset request. Please try again later.')
     } finally {
@@ -92,7 +104,8 @@ export function ForgotPassword() {
             <>
               <h1 className="text-2xl font-bold text-slate-950">Forgot Password?</h1>
               <p className="mt-2 leading-7 text-slate-600">
-                Enter your account information to request a password reset.
+                Enter your account information. We will text a 6-digit code to your registered
+                cellphone number.
               </p>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>

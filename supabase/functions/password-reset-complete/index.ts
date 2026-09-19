@@ -1,8 +1,16 @@
+// Public: finish a password reset with the 6-digit code that
+// password-reset-request texted to the account's phone.
+//
+// Body: { requestId, code, newPassword }. Wrong codes are counted per request
+// and the request is voided after RESET_CODE_MAX_ATTEMPTS — a 6-digit space
+// must not be guessable by hammering this endpoint.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { RESET_CODE_MAX_ATTEMPTS, hashResetCode, isResetCode } from '../_shared/reset-code.ts'
 
 interface Body {
-  resetToken?: string
+  requestId?: string
+  code?: string
   newPassword?: string
 }
 
@@ -13,12 +21,15 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value)
-  const hash = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hash))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
 }
 
 Deno.serve(async (req) => {
@@ -33,25 +44,23 @@ Deno.serve(async (req) => {
 
   try {
     const body = (await req.json().catch(() => ({}))) as Body
-    const resetToken = (body.resetToken ?? '').trim()
+    const requestId = (body.requestId ?? '').trim()
+    const code = (body.code ?? '').replace(/\s+/g, '')
     const newPassword = body.newPassword ?? ''
 
-    if (!resetToken || newPassword.length < 8) {
-      return json({ error: 'Valid reset authorization and password are required.' }, 400)
+    if (!isUuid(requestId) || !isResetCode(code) || newPassword.length < 8) {
+      return json({ error: 'Valid reset code and password are required.' }, 400)
     }
 
     const service = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const tokenHash = await sha256Hex(resetToken)
     const now = new Date().toISOString()
 
     const { data: resetRequest, error: lookupErr } = await service
       .from('password_reset_requests')
-      .select('id, profile_id, status, token_expires_at, token_used_at')
-      .eq('token_hash', tokenHash)
-      .eq('status', 'approved')
-      .is('token_used_at', null)
+      .select('id, profile_id, status, token_hash, token_expires_at, token_used_at, code_attempts')
+      .eq('id', requestId)
       .maybeSingle()
 
     if (lookupErr) {
@@ -63,14 +72,52 @@ Deno.serve(async (req) => {
       ? Date.parse(resetRequest.token_expires_at)
       : Number.NaN
 
-    if (!resetRequest || Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
-      if (resetRequest) {
+    const usable =
+      resetRequest &&
+      resetRequest.status === 'approved' &&
+      !resetRequest.token_used_at &&
+      resetRequest.token_hash &&
+      !Number.isNaN(expiresAt) &&
+      expiresAt > Date.now()
+
+    if (!usable) {
+      if (resetRequest && resetRequest.status === 'approved') {
         await service
           .from('password_reset_requests')
           .update({ status: 'expired' })
           .eq('id', resetRequest.id)
       }
-      return json({ error: 'Reset authorization is expired or invalid.' }, 400)
+      return json({ error: 'Reset code is expired or invalid. Please request a new one.' }, 400)
+    }
+
+    const expectedHash = await hashResetCode(resetRequest.id, code)
+    if (!timingSafeEqualHex(expectedHash, resetRequest.token_hash as string)) {
+      const attempts = (resetRequest.code_attempts ?? 0) + 1
+      const exhausted = attempts >= RESET_CODE_MAX_ATTEMPTS
+      await service
+        .from('password_reset_requests')
+        .update(exhausted ? { code_attempts: attempts, status: 'expired' } : { code_attempts: attempts })
+        .eq('id', resetRequest.id)
+
+      if (exhausted) {
+        await service.from('audit_log').insert({
+          actor_id: resetRequest.profile_id,
+          action: 'password_reset_code_locked',
+          target_table: 'password_reset_requests',
+          target_id: resetRequest.id,
+        })
+        return json(
+          { error: 'Too many incorrect codes. Please request a new reset code.' },
+          400
+        )
+      }
+      return json(
+        {
+          error: 'Incorrect code. Please check the SMS and try again.',
+          attemptsLeft: RESET_CODE_MAX_ATTEMPTS - attempts,
+        },
+        400
+      )
     }
 
     const { error: authErr } = await service.auth.admin.updateUserById(resetRequest.profile_id, {

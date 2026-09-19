@@ -6,6 +6,8 @@ import {
   updateAnnouncement,
   setAnnouncementPublished,
   deleteAnnouncement,
+  countAnnouncementSmsRecipients,
+  sendAnnouncementSms,
   type Announcement,
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
@@ -22,6 +24,16 @@ function formatDate(iso: string) {
   })
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function AdminAnnouncements() {
   const { session } = useAuth()
   const [items, setItems] = useState<Announcement[]>([])
@@ -30,6 +42,12 @@ export function AdminAnnouncements() {
   const [editing, setEditing] = useState<Announcement | 'new' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // SMS broadcast: which announcement is on its confirm step, how many
+  // patients it would reach, and the last run's outcome.
+  const [confirmSms, setConfirmSms] = useState<string | null>(null)
+  const [smsRecipients, setSmsRecipients] = useState<number | null>(null)
+  const [smsNotice, setSmsNotice] = useState('')
+  const [smsNoticeKind, setSmsNoticeKind] = useState<'success' | 'warn'>('success')
 
   const fetchItems = useCallback(
     () =>
@@ -79,6 +97,44 @@ export function AdminAnnouncements() {
     }
   }
 
+  // Step 1: show the recipient count and ask for confirmation. The gateway is
+  // one SIM at ~1 msg/sec, so a broadcast is never a one-click action.
+  const askSms = async (a: Announcement) => {
+    setError('')
+    setSmsNotice('')
+    setSmsRecipients(null)
+    setConfirmSms(a.id)
+    try {
+      setSmsRecipients(await countAnnouncementSmsRecipients())
+    } catch (e) {
+      setError(errorMessage(e, 'Could not count SMS recipients.'))
+      setConfirmSms(null)
+    }
+  }
+
+  // Step 2: fan out. The function reports sent / failed / skipped; skipped
+  // means "not attempted this run" (time budget or cap) — run again to resume.
+  const sendSms = async (a: Announcement) => {
+    setBusyId(a.id)
+    setError('')
+    setSmsNotice('')
+    try {
+      const r = await sendAnnouncementSms(a.id)
+      const parts = [`${r.sent} sent`]
+      if (r.failed) parts.push(`${r.failed} failed`)
+      if (r.skipped) parts.push(`${r.skipped} not yet attempted — click Send via SMS again to continue`)
+      const already = r.total === 0 ? 'Every patient already received this announcement.' : ''
+      setSmsNoticeKind(r.failed || r.skipped ? 'warn' : 'success')
+      setSmsNotice(already || `SMS broadcast for “${a.title}”: ${parts.join(', ')}.`)
+      setConfirmSms(null)
+    } catch (e) {
+      setError(errorMessage(e, 'Could not send the announcement by SMS.'))
+    } finally {
+      setBusyId(null)
+      reload()
+    }
+  }
+
   return (
     <section>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -115,6 +171,15 @@ export function AdminAnnouncements() {
         </div>
       )}
 
+      {smsNotice && (
+        <div
+          className={`${smsNoticeKind === 'warn' ? 'alert-warn' : 'alert-success'} mt-4`}
+          role="status"
+        >
+          {smsNotice}
+        </div>
+      )}
+
       <div className="mt-6 space-y-3">
         {loading ? (
           <p className="text-slate-400">Loading…</p>
@@ -137,11 +202,66 @@ export function AdminAnnouncements() {
                       {a.published ? 'Published' : 'Draft'}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-400">{formatDate(a.created_at)}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {formatDate(a.created_at)}
+                    {a.sms_sent_at && (
+                      <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+                        SMS sent {formatDateTime(a.sms_sent_at)}
+                        {a.sms_recipient_count != null ? ` · ${a.sms_recipient_count} patients` : ''}
+                      </span>
+                    )}
+                  </p>
                   <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{a.body}</p>
+
+                  {confirmSms === a.id && (
+                    <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm">
+                      {smsRecipients === null ? (
+                        <p className="text-sky-800">Counting recipients…</p>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-sky-900">
+                            Text this announcement to {smsRecipients} patient
+                            {smsRecipients === 1 ? '' : 's'}?
+                          </p>
+                          <p className="mt-1 text-xs text-sky-800">
+                            One SMS per patient with a registered cellphone number. The gateway sends
+                            about one message per second, so a large list takes a few minutes.
+                            Patients who already received this announcement are skipped.
+                            {a.sms_sent_at ? ' This announcement was already broadcast once.' : ''}
+                          </p>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              onClick={() => sendSms(a)}
+                              disabled={busyId === a.id || smsRecipients === 0}
+                              className="btn-primary min-h-8 px-3 py-1 text-xs"
+                            >
+                              {busyId === a.id ? 'Sending…' : 'Confirm & send'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmSms(null)}
+                              disabled={busyId === a.id}
+                              className="btn-subtle min-h-8 px-3 py-1 text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  {a.published && (
+                    <button
+                      onClick={() => askSms(a)}
+                      disabled={busyId === a.id || editing !== null || confirmSms === a.id}
+                      className="btn-subtle min-h-8 px-3 py-1 text-xs"
+                      title="Text this announcement to every patient"
+                    >
+                      Send via SMS
+                    </button>
+                  )}
                   <button
                     onClick={() => togglePublish(a)}
                     disabled={busyId === a.id || editing !== null}

@@ -1,7 +1,49 @@
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import {
+  HttpError,
+  MAX_SMS_LENGTH,
+  SMS_SENDER_PREFIX,
+  formatAppointmentTime,
+  normalizePhilippineMobile,
+  sendSms,
+} from '../_shared/sms.ts'
 
-type SmsEvent = 'appointment_booked' | 'appointment_cancelled'
+// Appointment-lifecycle events the client may ask us to text about. The
+// message text is composed HERE from the appointment row — the client never
+// supplies message content for these, so a caller can only trigger the
+// notification that matches the appointment's real state.
+const APPOINTMENT_EVENTS = [
+  'appointment_booked',
+  'appointment_cancelled',
+  'appointment_rescheduled',
+  'appointment_checked_in',
+  'appointment_served',
+  'appointment_no_show',
+  'queue_now_serving',
+] as const
+type SmsEvent = (typeof APPOINTMENT_EVENTS)[number]
+
+// Which appointment status each event is valid for. Prevents e.g. texting
+// "your appointment is booked" for a cancelled row.
+const EXPECTED_STATUS: Record<SmsEvent, string[]> = {
+  appointment_booked: ['booked'],
+  appointment_cancelled: ['cancelled'],
+  appointment_rescheduled: ['booked'],
+  appointment_checked_in: ['checked_in'],
+  appointment_served: ['served'],
+  appointment_no_show: ['no_show'],
+  queue_now_serving: ['booked', 'checked_in'],
+}
+
+// Events a PATIENT may trigger for their own appointment. Everything else is
+// clinic personnel only (they are the ones performing those actions).
+const PATIENT_EVENTS: SmsEvent[] = [
+  'appointment_booked',
+  'appointment_cancelled',
+  'appointment_rescheduled',
+]
+
 type Role = 'patient' | 'doctor' | 'nurse' | 'staff' | 'admin'
 
 interface Body {
@@ -18,24 +60,12 @@ interface AppointmentDetails {
   patient_id: string
   patients: {
     profile_id: string
-    profiles: {
-      phone: string | null
-    } | null
+    profiles: { phone: string | null } | null
   } | null
-  services: {
-    name: string
-  } | null
-  time_slots: {
-    slot_datetime: string
-  } | null
-}
-
-class HttpError extends Error {
-  status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
+  services: { name: string } | null
+  providers: { profiles: { full_name: string } | null } | null
+  time_slots: { slot_datetime: string } | null
+  queue_tickets: { ticket_number: string; status: string } | { ticket_number: string; status: string }[] | null
 }
 
 function json(body: unknown, status = 200): Response {
@@ -46,67 +76,54 @@ function json(body: unknown, status = 200): Response {
 }
 
 function isSmsEvent(value: string): value is SmsEvent {
-  return value === 'appointment_booked' || value === 'appointment_cancelled'
+  return (APPOINTMENT_EVENTS as readonly string[]).includes(value)
 }
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  )
-}
-
-function isCanonicalPhilippineMobile(value: string): boolean {
-  return /^\+639\d{9}$/.test(value)
-}
-
-function normalizePhilippineMobile(value: string): string | null {
-  let digits = value.replace(/\D/g, '')
-  if (digits.startsWith('63')) digits = digits.slice(2)
-  else if (digits.startsWith('0')) digits = digits.slice(1)
-  digits = digits.slice(0, 10)
-  return /^9\d{9}$/.test(digits) ? `+63${digits}` : null
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function appointmentInstant(appointment: AppointmentDetails): string | null {
   return appointment.appointment_at ?? appointment.time_slots?.slot_datetime ?? null
 }
 
-function formatAppointmentTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+function ticketOf(appointment: AppointmentDetails): { ticket_number: string; status: string } | null {
+  const t = appointment.queue_tickets
+  if (!t) return null
+  return Array.isArray(t) ? (t[0] ?? null) : t
 }
 
 function messageFor(event: SmsEvent, appointment: AppointmentDetails): string {
   const when = appointmentInstant(appointment)
-  if (event === 'appointment_booked') {
-    return when
-      ? `MHO Malilipot: Your appointment is booked for ${formatAppointmentTime(when)}.`
-      : 'MHO Malilipot: Your appointment has been booked successfully.'
-  }
+  const whenText = when ? formatAppointmentTime(when) : null
+  const service = appointment.services?.name ?? 'your appointment'
+  const provider = appointment.providers?.profiles?.full_name
+  const ticket = ticketOf(appointment)?.ticket_number
+  const p = SMS_SENDER_PREFIX
 
-  return when
-    ? `MHO Malilipot: Your appointment for ${formatAppointmentTime(when)} has been cancelled.`
-    : 'MHO Malilipot: Your appointment has been cancelled.'
-}
-
-function requiredEnv(name: string): string {
-  const value = Deno.env.get(name)?.trim()
-  if (!value) throw new HttpError(500, 'SMS service is not configured.')
-  return value
-}
-
-function parseResponseBody(text: string): unknown {
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
+  switch (event) {
+    case 'appointment_booked':
+      return whenText
+        ? `${p}: Your ${service} appointment is booked for ${whenText}${ticket ? ` (Ticket ${ticket})` : ''}. Please arrive 15 minutes early.`
+        : `${p}: Your ${service} appointment has been booked successfully.`
+    case 'appointment_cancelled':
+      return whenText
+        ? `${p}: Your ${service} appointment for ${whenText} has been cancelled.`
+        : `${p}: Your ${service} appointment has been cancelled.`
+    case 'appointment_rescheduled':
+      return whenText
+        ? `${p}: Your ${service} appointment has been moved to ${whenText}${provider ? ` with ${provider}` : ''}${ticket ? ` (Ticket ${ticket})` : ''}. Please arrive 15 minutes early.`
+        : `${p}: Your ${service} appointment has been rescheduled.`
+    case 'appointment_checked_in':
+      return `${p}: You are checked in for ${service}${ticket ? `. Your ticket is ${ticket}` : ''}. Please wait to be called.`
+    case 'queue_now_serving':
+      return `${p}: It's your turn${ticket ? ` — Ticket ${ticket}` : ''}. Please proceed to ${provider ?? 'the clinic'} now.`
+    case 'appointment_served':
+      return `${p}: Thank you for visiting today. Your ${service} appointment is complete. Ingat po!`
+    case 'appointment_no_show':
+      return whenText
+        ? `${p}: You missed your ${service} appointment on ${whenText}. Please book a new appointment when you are able.`
+        : `${p}: You missed your ${service} appointment. Please book a new appointment when you are able.`
   }
 }
 
@@ -164,7 +181,9 @@ async function fetchAppointment(
         profiles!inner ( phone )
       ),
       services ( name ),
-      time_slots ( slot_datetime )
+      providers ( profiles ( full_name ) ),
+      time_slots ( slot_datetime ),
+      queue_tickets ( ticket_number, status )
     `
     )
     .eq('id', appointmentId)
@@ -179,153 +198,11 @@ async function fetchAppointment(
   return data as unknown as AppointmentDetails
 }
 
-function authorize(callerId: string, role: Role, appointment: AppointmentDetails): void {
+function authorize(callerId: string, role: Role, event: SmsEvent, appointment: AppointmentDetails) {
+  if (role === 'staff' || role === 'admin' || role === 'nurse') return
   const ownerId = appointment.patients?.profile_id
-  if (ownerId === callerId) return
-  if (role === 'staff' || role === 'admin') return
+  if (role === 'patient' && ownerId === callerId && PATIENT_EVENTS.includes(event)) return
   throw new HttpError(403, 'You are not allowed to send SMS for this appointment.')
-}
-
-async function createPendingLog(
-  service: SupabaseClient,
-  input: {
-    recipient: string
-    message: string
-    patientId?: string | null
-    appointmentId?: string | null
-  }
-): Promise<string> {
-  const { data, error } = await service
-    .from('notification_logs')
-    .insert({
-      type: 'sms',
-      recipient: input.recipient,
-      message: input.message,
-      status: 'pending',
-      patient_id: input.patientId ?? null,
-      appointment_id: input.appointmentId ?? null,
-    })
-    .select('id')
-    .single()
-
-  if (error) {
-    console.error('send-sms notification log insert failed:', error.message)
-    throw new HttpError(500, 'Could not record the SMS notification attempt.')
-  }
-
-  return data.id as string
-}
-
-async function markLogSent(service: SupabaseClient, logId: string): Promise<void> {
-  const { error } = await service
-    .from('notification_logs')
-    .update({ status: 'sent', sent_at: new Date().toISOString(), error_message: null })
-    .eq('id', logId)
-
-  if (error) console.error('send-sms notification log sent update failed:', error.message)
-}
-
-async function markLogFailed(
-  service: SupabaseClient,
-  logId: string,
-  safeError: string
-): Promise<void> {
-  const { error } = await service
-    .from('notification_logs')
-    .update({ status: 'failed', error_message: safeError })
-    .eq('id', logId)
-
-  if (error) console.error('send-sms notification log failed update failed:', error.message)
-}
-
-async function sendViaITextMo(
-  service: SupabaseClient,
-  logId: string,
-  phone: string,
-  smsBody: string
-): Promise<{ httpStatus: number; responseBody: unknown }> {
-  if (!isCanonicalPhilippineMobile(phone)) {
-    const safeError = 'No usable Philippine mobile number is available.'
-    await markLogFailed(service, logId, safeError)
-    throw new HttpError(422, safeError)
-  }
-
-  let apiKey = ''
-  let endpoint = ''
-
-  try {
-    apiKey = requiredEnv('ITEXTMO_API_KEY')
-    endpoint = requiredEnv('ITEXTMO_ENDPOINT')
-  } catch (err) {
-    const safeError = err instanceof HttpError ? err.message : 'SMS service is not configured.'
-    await markLogFailed(service, logId, safeError)
-    throw err
-  }
-
-  let response: Response
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': `mho-${logId}`,
-        },
-        body: JSON.stringify({
-          to: phone,
-          body: smsBody,
-        }),
-      })
-    } finally {
-      clearTimeout(timeoutId)
-    }
-
-    const debugBody = await response.clone().text()
-
-    console.log('iTextMo gateway response debug:', {
-      status: response.status,
-      statusText: response.statusText,
-      url: response.url,
-      redirected: response.redirected,
-      contentType: response.headers.get('content-type'),
-      server: response.headers.get('server'),
-      location: response.headers.get('location'),
-      body: debugBody,
-    })
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      console.error('send-sms iTextMo request timed out after 15 seconds')
-      const safeError = 'SMS gateway request timed out.'
-      await markLogFailed(service, logId, safeError)
-      throw new HttpError(504, 'SMS notification timed out.')
-    }
-
-    console.error('send-sms iTextMo request failed before response:', err)
-    const safeError = 'SMS gateway request failed.'
-    await markLogFailed(service, logId, safeError)
-    throw new HttpError(502, 'SMS notification could not be sent.')
-  }
-
-  const responseText = await response.text()
-  const responseBody = parseResponseBody(responseText)
-
-  if (!response.ok) {
-    console.error('send-sms iTextMo request failed:', {
-      status: response.status,
-      notification_log_id: logId,
-    })
-    const safeError = `SMS gateway returned HTTP ${response.status}.`
-    await markLogFailed(service, logId, safeError)
-    throw new HttpError(502, 'SMS notification could not be sent.')
-  }
-
-  await markLogSent(service, logId)
-  return { httpStatus: response.status, responseBody }
 }
 
 Deno.serve(async (req) => {
@@ -340,55 +217,59 @@ Deno.serve(async (req) => {
     const manualRecipient = (body.recipient ?? '').trim()
     const manualMessage = (body.message ?? '').trim()
 
+    // ── Manual admin SMS (free text) ─────────────────────────
     if (!event && (manualRecipient || manualMessage)) {
       if (role !== 'admin') return json({ error: 'Administrator access required.' }, 403)
       if (!manualRecipient) return json({ error: 'Recipient phone number is required.' }, 400)
       if (!manualMessage) return json({ error: 'Message is required.' }, 400)
-      if (manualMessage.length > 480) {
-        return json({ error: 'Message is too long. Please keep it under 480 characters.' }, 400)
+      if (manualMessage.length > MAX_SMS_LENGTH) {
+        return json(
+          { error: `Message is too long. Please keep it under ${MAX_SMS_LENGTH} characters.` },
+          400
+        )
       }
 
       const phone = normalizePhilippineMobile(manualRecipient) ?? manualRecipient
-      const logId = await createPendingLog(service, {
+      const result = await sendSms(service, {
+        event: 'manual',
         recipient: phone,
         message: manualMessage,
       })
-      const result = await sendViaITextMo(service, logId, phone, manualMessage)
 
       return json({
         success: true,
-        notification_log_id: logId,
+        notification_log_id: result.logId,
         http_status: result.httpStatus,
         response: result.responseBody,
       })
     }
 
+    // ── Appointment lifecycle events ─────────────────────────
     if (!isSmsEvent(event)) return json({ error: 'Unsupported SMS event.' }, 400)
     if (!isUuid(appointmentId)) return json({ error: 'Valid appointment id is required.' }, 400)
 
     const appointment = await fetchAppointment(service, appointmentId)
-    authorize(callerId, role, appointment)
+    authorize(callerId, role, event, appointment)
 
-    if (event === 'appointment_booked' && appointment.status !== 'booked') {
-      return json({ error: 'Appointment is not in a bookable notification state.' }, 400)
+    if (!EXPECTED_STATUS[event].includes(appointment.status)) {
+      return json({ error: 'Appointment is not in a state that matches this notification.' }, 400)
     }
-    if (event === 'appointment_cancelled' && appointment.status !== 'cancelled') {
-      return json({ error: 'Appointment is not cancelled.' }, 400)
+    if (event === 'queue_now_serving' && ticketOf(appointment)?.status !== 'now_serving') {
+      return json({ error: 'This ticket is not currently being served.' }, 400)
     }
 
     const phone = appointment.patients?.profiles?.phone ?? ''
-    const smsBody = messageFor(event, appointment)
-    const logId = await createPendingLog(service, {
+    const result = await sendSms(service, {
+      event,
       recipient: phone,
-      message: smsBody,
+      message: messageFor(event, appointment),
       patientId: appointment.patient_id,
       appointmentId: appointment.id,
     })
-    const result = await sendViaITextMo(service, logId, phone, smsBody)
 
     return json({
       success: true,
-      notification_log_id: logId,
+      notification_log_id: result.logId,
       http_status: result.httpStatus,
       response: result.responseBody,
     })

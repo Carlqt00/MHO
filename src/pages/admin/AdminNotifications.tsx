@@ -15,20 +15,39 @@ type Filter = NotificationStatus | 'all'
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'sent', label: 'Sent' },
+  { value: 'delivered', label: 'Delivered' },
   { value: 'pending', label: 'Pending' },
   { value: 'failed', label: 'Failed' },
 ]
 
+// "Sent" = accepted/transmitted by the gateway; "Delivered" = handset receipt
+// confirmed by the iTextMo webhook.
 const SUMMARY_CARDS: { key: keyof NotificationSummary; label: string; tone: string }[] = [
   { key: 'sent', label: 'Sent', tone: 'text-emerald-700' },
+  { key: 'delivered', label: 'Delivered', tone: 'text-sky-700' },
   { key: 'pending', label: 'Pending', tone: 'text-amber-600' },
   { key: 'failed', label: 'Failed', tone: 'text-red-600' },
 ]
 
 const STATUS_STYLES: Record<NotificationStatus, string> = {
   sent: 'bg-emerald-100 text-emerald-800',
+  delivered: 'bg-sky-100 text-sky-800',
   pending: 'bg-amber-100 text-amber-800',
   failed: 'bg-red-100 text-red-700',
+}
+
+// notification_logs.event → short label for the table.
+const EVENT_LABEL: Record<string, string> = {
+  manual: 'Manual',
+  announcement: 'Announcement',
+  password_reset_code: 'Password reset',
+  appointment_booked: 'Booked',
+  appointment_cancelled: 'Cancelled',
+  appointment_rescheduled: 'Rescheduled',
+  appointment_checked_in: 'Checked in',
+  appointment_served: 'Served',
+  appointment_no_show: 'No-show',
+  queue_now_serving: 'Now serving',
 }
 
 function formatDateTime(iso: string) {
@@ -48,7 +67,12 @@ function statusLabel(status: NotificationStatus) {
 
 export function AdminNotifications() {
   const [logs, setLogs] = useState<NotificationLog[]>([])
-  const [summary, setSummary] = useState<NotificationSummary>({ sent: 0, pending: 0, failed: 0 })
+  const [summary, setSummary] = useState<NotificationSummary>({
+    sent: 0,
+    delivered: 0,
+    pending: 0,
+    failed: 0,
+  })
   const [filter, setFilter] = useState<Filter>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -244,6 +268,7 @@ export function AdminNotifications() {
               <thead>
                 <tr>
                   <th>Type</th>
+                  <th>Event</th>
                   <th>Recipient</th>
                   <th>Message</th>
                   <th>Status</th>
@@ -254,6 +279,9 @@ export function AdminNotifications() {
                 {logs.map((log) => (
                   <tr key={log.id}>
                     <td className="whitespace-nowrap uppercase text-slate-600">{log.type}</td>
+                    <td className="whitespace-nowrap text-slate-600">
+                      {log.event ? (EVENT_LABEL[log.event] ?? log.event) : '—'}
+                    </td>
                     <td className="whitespace-nowrap font-medium text-slate-800">
                       {log.recipient}
                     </td>

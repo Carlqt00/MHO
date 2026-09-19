@@ -130,13 +130,21 @@ export function PatientDashboard() {
                 </div>
 
                 {appt.status === 'booked' && (
-                  <button
-                    onClick={() => handleCancel(appt.id)}
-                    disabled={cancellingId === appt.id}
-                    className="btn-danger w-full sm:w-auto"
-                  >
-                    {cancellingId === appt.id ? 'Cancelling…' : 'I-cancel'}
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Link
+                      to={`/patient/book?reschedule=${appt.id}`}
+                      className="btn-secondary w-full text-center sm:w-auto"
+                    >
+                      Ilipat ang oras
+                    </Link>
+                    <button
+                      onClick={() => handleCancel(appt.id)}
+                      disabled={cancellingId === appt.id}
+                      className="btn-danger w-full sm:w-auto"
+                    >
+                      {cancellingId === appt.id ? 'Cancelling…' : 'I-cancel'}
+                    </button>
+                  </div>
                 )}
               </div>
             )

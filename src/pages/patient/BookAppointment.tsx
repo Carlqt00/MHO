@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DashboardLayout } from '../../components/DashboardLayout'
 import { TicketCard } from '../../components/TicketCard'
 import {
@@ -7,12 +7,15 @@ import {
   fetchOpenSlots,
   fetchServiceSlotStatus,
   fetchMyActiveBookings,
+  fetchMyAppointments,
   bookAppointment,
+  rescheduleAppointment,
   type Service,
   type OpenSlot,
   type BookingResult,
   type ActiveBooking,
   type DaySlotStatus,
+  type Appointment,
 } from '../../lib/api'
 
 function formatSlot(iso: string) {
@@ -78,9 +81,20 @@ function unavailableLabel(s: DaySlotStatus | undefined): string {
 
 type Step = 1 | 2 | 3 | 4
 
+// The same wizard serves two flows:
+//   /patient/book                  — new booking (all four steps)
+//   /patient/book?reschedule=<id>  — move an existing BOOKED appointment. The
+//     service is fixed to the appointment's, so step 1 is skipped, and confirm
+//     calls reschedule_appointment instead of book_appointment.
 export function BookAppointment() {
   const navigate = useNavigate()
-  const [step, setStep] = useState<Step>(1)
+  const [searchParams] = useSearchParams()
+  const rescheduleId = searchParams.get('reschedule')
+  const isReschedule = !!rescheduleId
+  const [rescheduling, setRescheduling] = useState<Appointment | null>(null)
+  const [rescheduleLoading, setRescheduleLoading] = useState(isReschedule)
+
+  const [step, setStep] = useState<Step>(isReschedule ? 2 : 1)
 
   const [services, setServices] = useState<Service[]>([])
   const [servicesLoading, setServicesLoading] = useState(true)
@@ -123,6 +137,36 @@ export function BookAppointment() {
       .then(setActiveBookings)
       .catch(() => setActiveBookings([]))
   }, [])
+
+  // Reschedule: load the appointment being moved and pin the service to it.
+  useEffect(() => {
+    if (!rescheduleId) return
+    let cancelled = false
+    fetchMyAppointments()
+      .then((list) => {
+        if (cancelled) return
+        const appt = list.find((a) => a.id === rescheduleId)
+        if (!appt) {
+          setError('Hindi mahanap ang appointment. / Appointment not found.')
+        } else if (appt.status !== 'booked') {
+          setError(
+            'Hindi na maaaring ilipat ang appointment na ito. / This appointment can no longer be rescheduled.'
+          )
+        } else {
+          setRescheduling(appt)
+          setSelectedService({ id: appt.service_id, name: appt.services.name, description: null })
+        }
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message)
+      })
+      .finally(() => {
+        if (!cancelled) setRescheduleLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rescheduleId])
 
   // One aggregate query per month view (not per day) whenever the service or
   // the visible month changes.
@@ -188,16 +232,20 @@ export function BookAppointment() {
   }
 
   // Pre-submit conflict checks — mirror the DB guards in 0011 so the patient
-  // sees the conflict before hitting the database.
+  // sees the conflict before hitting the database. When rescheduling, the
+  // appointment being moved is not a conflict with itself.
+  const otherBookings = rescheduleId
+    ? activeBookings.filter((b) => b.id !== rescheduleId)
+    : activeBookings
   const conflictSameServiceDate =
     !!selectedService &&
     !!selectedDate &&
-    activeBookings.some(
+    otherBookings.some(
       (b) => b.service_id === selectedService.id && manilaDateOf(b.slot_datetime) === selectedDate
     )
   const conflictSameTime =
     !!selectedSlot &&
-    activeBookings.some(
+    otherBookings.some(
       (b) => new Date(b.slot_datetime).getTime() === new Date(selectedSlot.slot_datetime).getTime()
     )
   const hasConflict = conflictSameServiceDate || conflictSameTime
@@ -208,10 +256,25 @@ export function BookAppointment() {
     setError('')
     setSmsWarning('')
     try {
-      const result = await bookAppointment(selectedSlot.id)
-      setBooking(result)
-      if (result.smsNotificationFailed) {
-        setSmsWarning('Appointment booked successfully, but the SMS notification could not be sent.')
+      if (rescheduling) {
+        const result = await rescheduleAppointment(rescheduling.id, selectedSlot.id)
+        setBooking({
+          appointment_id: result.appointment_id,
+          ticket_number: result.ticket_number,
+          queue_position: result.queue_position,
+          qr_code: result.qr_code,
+          slot_datetime: result.slot_datetime,
+          smsNotificationFailed: result.smsNotificationFailed,
+        })
+        if (result.smsNotificationFailed) {
+          setSmsWarning('Appointment moved successfully, but the SMS notification could not be sent.')
+        }
+      } else {
+        const result = await bookAppointment(selectedSlot.id)
+        setBooking(result)
+        if (result.smsNotificationFailed) {
+          setSmsWarning('Appointment booked successfully, but the SMS notification could not be sent.')
+        }
       }
     } catch (e) {
       setError((e as Error).message)
@@ -223,7 +286,7 @@ export function BookAppointment() {
   // ── Ticket (after a successful confirmation) ─────────────────
   if (booking) {
     return (
-      <DashboardLayout title="Appointment Booked!">
+      <DashboardLayout title={isReschedule ? 'Nailipat ang Appointment!' : 'Appointment Booked!'}>
         <div className="mx-auto max-w-md">
           <TicketCard
             size="full"
@@ -255,8 +318,36 @@ export function BookAppointment() {
     )
   }
 
+  // Reschedule flow is blocked until the appointment loads (or fails to).
+  if (isReschedule && (rescheduleLoading || !rescheduling)) {
+    return (
+      <DashboardLayout title="Ilipat ang Appointment">
+        {rescheduleLoading ? (
+          <p className="text-slate-400">Loading…</p>
+        ) : (
+          <div className="mx-auto max-w-md">
+            <div className="alert-error" role="alert">
+              {error || 'Hindi mahanap ang appointment. / Appointment not found.'}
+            </div>
+            <Link to="/patient" className="btn-secondary mt-4 inline-flex">
+              ← Bumalik sa Dashboard
+            </Link>
+          </div>
+        )}
+      </DashboardLayout>
+    )
+  }
+
   return (
-    <DashboardLayout title="Book an Appointment">
+    <DashboardLayout title={isReschedule ? 'Ilipat ang Appointment' : 'Book an Appointment'}>
+      {rescheduling && (
+        <div className="alert-warn mb-6" role="status">
+          Kasalukuyang iskedyul: <strong>{rescheduling.services.name}</strong> ·{' '}
+          {rescheduling.providers.profiles.full_name} ·{' '}
+          {formatSlot(rescheduling.time_slots.slot_datetime)}. Pumili ng bagong petsa at oras.
+        </div>
+      )}
+
       {/* Progress */}
       <div className="mb-8 flex w-full gap-2 overflow-x-auto pb-2 text-sm">
         {['Service', 'Date', 'Time', 'Confirm'].map((label, i) => (
@@ -318,15 +409,24 @@ export function BookAppointment() {
       {step === 2 && (
         <div>
           <div className="mb-4 flex items-center gap-3">
-            <button
-              onClick={() => {
-                setStep(1)
-                setError('')
-              }}
-              className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
-            >
-              ← Baguhin ang serbisyo
-            </button>
+            {isReschedule ? (
+              <Link
+                to="/patient"
+                className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
+              >
+                ← Bumalik sa Dashboard
+              </Link>
+            ) : (
+              <button
+                onClick={() => {
+                  setStep(1)
+                  setError('')
+                }}
+                className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
+              >
+                ← Baguhin ang serbisyo
+              </button>
+            )}
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
               {selectedService?.name}
             </span>
@@ -501,7 +601,13 @@ export function BookAppointment() {
               disabled={bookingBusy || hasConflict}
               className="btn-primary flex-1"
             >
-              {bookingBusy ? 'Nag-bo-book…' : 'I-confirm ang Appointment'}
+              {bookingBusy
+                ? isReschedule
+                  ? 'Inililipat…'
+                  : 'Nag-bo-book…'
+                : isReschedule
+                  ? 'I-confirm ang bagong oras'
+                  : 'I-confirm ang Appointment'}
             </button>
           </div>
         </div>
