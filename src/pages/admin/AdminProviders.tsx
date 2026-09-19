@@ -178,8 +178,8 @@ function ProviderCard({
 
   return (
     <div className="card card-pad">
-      <div className="flex items-center gap-2">
-        <p className="font-semibold text-slate-900">{provider.profiles.full_name}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 break-words font-semibold text-slate-900">{provider.profiles.full_name}</p>
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
           {provider.provider_type}
         </span>
@@ -213,8 +213,8 @@ function ProviderCard({
       )}
 
       {/* add window */}
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <label className="min-w-[9rem] flex-1 text-xs text-slate-500 sm:flex-none">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(8rem,9rem)_minmax(7rem,8rem)_minmax(7rem,8rem)_auto] lg:items-end">
+        <label className="min-w-0 text-xs text-slate-500">
           Day
           <select
             value={day}
@@ -228,7 +228,7 @@ function ProviderCard({
             ))}
           </select>
         </label>
-        <label className="min-w-[8rem] flex-1 text-xs text-slate-500 sm:flex-none">
+        <label className="min-w-0 text-xs text-slate-500">
           Start
           <input
             type="time"
@@ -237,7 +237,7 @@ function ProviderCard({
             className={`${inputCls} mt-1`}
           />
         </label>
-        <label className="min-w-[8rem] flex-1 text-xs text-slate-500 sm:flex-none">
+        <label className="min-w-0 text-xs text-slate-500">
           End
           <input
             type="time"
@@ -249,7 +249,7 @@ function ProviderCard({
         <button
           onClick={add}
           disabled={busy || duplicate}
-          className="btn-secondary"
+          className="btn-secondary w-full lg:w-auto"
         >
           + Add window
         </button>
@@ -411,8 +411,8 @@ function TimeOffSection({
 
       <div className="card card-pad">
         {stage === 'idle' && (
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-[14rem] flex-1 text-xs text-slate-500">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(12rem,1fr)_minmax(9rem,12rem)_minmax(12rem,1fr)_auto] xl:items-end">
+            <label className="min-w-0 text-xs text-slate-500">
               Applies to
               <select
                 value={scope}
@@ -427,7 +427,7 @@ function TimeOffSection({
                 ))}
               </select>
             </label>
-            <label className="min-w-[10rem] flex-1 text-xs text-slate-500">
+            <label className="min-w-0 text-xs text-slate-500">
               Date
               <input
                 type="date"
@@ -436,7 +436,7 @@ function TimeOffSection({
                 className={`${inputCls} mt-1`}
               />
             </label>
-            <label className="min-w-[14rem] flex-1 text-xs text-slate-500">
+            <label className="min-w-0 text-xs text-slate-500">
               Reason (optional)
               <input
                 value={reason}
@@ -448,7 +448,7 @@ function TimeOffSection({
             <button
               onClick={check}
               disabled={busy}
-              className="btn-secondary"
+              className="btn-secondary w-full xl:w-auto"
             >
               {busy ? 'Checking…' : '+ Add'}
             </button>
@@ -466,7 +466,7 @@ function TimeOffSection({
               can cancel them after adding, or reschedule via the Reschedule feature.
             </p>
             <ConflictList conflicts={conflicts} />
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <button
                 onClick={commit}
                 disabled={busy}
@@ -535,8 +535,8 @@ function TimeOffSection({
         {timeOff.length > 0 && (
           <ul className="mt-4 divide-y divide-slate-100">
             {timeOff.map((t) => (
-              <li key={t.id} className="flex items-center justify-between py-2 text-sm">
-                <span>
+              <li key={t.id} className="flex flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 break-words">
                   <span className="font-medium text-slate-900">{t.exception_date}</span>
                   <span className="ml-2 text-slate-500">
                     {t.provider_id ? t.providers?.profiles.full_name : 'All providers (holiday)'}
@@ -571,13 +571,13 @@ function ConflictList({
     <ul className="mt-3 divide-y divide-black/5">
       {conflicts.map((c) => (
         <li key={c.appointment_id} className="py-2 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-gray-700">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words text-gray-700">
               <span className="font-medium">{c.patient_name}</span> · {c.service_name} ·{' '}
               {c.provider_name} · {formatSlotSample(c.slot_datetime)}
               <span className="ml-1 text-xs text-slate-400">({c.status})</span>
             </span>
-            <span className="flex shrink-0 gap-1">
+            <span className="flex shrink-0 flex-wrap gap-1 sm:justify-end">
               {onReschedule && c.status === 'booked' && (
                 <button
                   onClick={() => setOpenId(openId === c.appointment_id ? null : c.appointment_id)}
@@ -877,7 +877,7 @@ function SlotGenerator({
           </label>
         </div>
 
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <button
             onClick={runPreview}
             disabled={!ready || busy}
@@ -1003,12 +1003,12 @@ function GenerateResultModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="genresult-title"
     >
-      <div className="card w-full max-w-md p-6 shadow-xl shadow-emerald-950/15">
+      <div className="card max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto p-4 shadow-xl shadow-emerald-950/15 sm:p-6">
         <h3
           id="genresult-title"
           className={`text-base font-semibold ${

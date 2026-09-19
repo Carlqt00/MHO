@@ -121,18 +121,21 @@ export async function fetchOpenSlots(serviceId: string, manilaDate?: string): Pr
 
 export interface DaySlotStatus {
   day: string // 'YYYY-MM-DD' (Asia/Manila)
-  remaining: number // unbooked AND upcoming — actually bookable now
+  remaining: number // actually bookable: min(service capacity remaining, open_slots)
   unbooked: number // unbooked, any time (past + upcoming)
   upcoming: number // any slot with slot_datetime >= now() (booked or not)
   total: number // every non-exception slot that day (booked + unbooked)
+  daily_capacity: number
+  booked_count: number
+  remaining_slots: number // same as remaining; explicit RPC field for clarity
+  is_full: boolean // true when service/day capacity is exhausted
+  open_slots: number // unbooked AND upcoming generated time slots
 }
 
-// ONE aggregate query for the month calendar (service_daily_slot_status, 0013):
-// per-Manila-day slot counts for a service across every provider offering it.
-// from/to are inclusive Manila dates ('YYYY-MM-DD'). Days with NO non-exception
-// slot are simply absent from the result — the calendar reads that as
-// "Walang schedule". Supersedes the open-count-only service_daily_availability
-// (0011) so the calendar can tell "no schedule" / "full" / "times passed" apart.
+// ONE aggregate query for the month calendar (service_daily_slot_status):
+// per-Manila-day schedule counts plus fixed service-capacity counts. from/to
+// are inclusive Manila dates ('YYYY-MM-DD'). Days with NO non-exception slot are
+// absent from the result, so the calendar reads them as "No schedule".
 export async function fetchServiceSlotStatus(
   serviceId: string,
   from: string,
@@ -190,6 +193,9 @@ export async function bookAppointment(slotId: string): Promise<BookingResult> {
       throw new Error(
         'Nakuha na po ng iba ang slot na ito. Pumili po ng ibang oras. / This slot was just taken — please choose another time.'
       )
+    }
+    if (raw.includes('ERR_SERVICE_FULL')) {
+      throw new Error('No slots remaining for this service on the selected date.')
     }
     throw new Error(errorMessage(error, GENERIC_ERR))
   }
@@ -371,6 +377,16 @@ export interface NotificationSummary {
   failed: number
 }
 
+export interface SmsInboxMessage {
+  id: string
+  provider_message_id: string | null
+  sender: string
+  message: string
+  received_at: string
+  is_read: boolean
+  created_at: string
+}
+
 export async function fetchNotificationLogs(
   status: NotificationStatus | 'all' = 'all'
 ): Promise<NotificationLog[]> {
@@ -431,6 +447,32 @@ export async function sendManualSms(input: {
     throw new Error(message || errorMessage(error, 'SMS notification could not be sent.'))
   }
   return data as AppointmentSmsResult
+}
+
+export async function getSmsInbox(): Promise<SmsInboxMessage[]> {
+  const { data, error } = await supabase
+    .from('sms_inbox')
+    .select('id, provider_message_id, sender, message, received_at, is_read, created_at')
+    .order('received_at', { ascending: false })
+    .limit(100)
+
+  if (error) throw new Error(errorMessage(error, 'Failed to load SMS inbox.'))
+  return (data ?? []) as SmsInboxMessage[]
+}
+
+export async function getUnreadSmsCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('sms_inbox')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_read', false)
+
+  if (error) throw new Error(errorMessage(error, 'Failed to load unread SMS count.'))
+  return count ?? 0
+}
+
+export async function markSmsMessageRead(id: string, isRead: boolean): Promise<void> {
+  const { error } = await supabase.from('sms_inbox').update({ is_read: isRead }).eq('id', id)
+  if (error) throw new Error(errorMessage(error, 'Failed to update SMS read status.'))
 }
 
 async function trySendAppointmentSms(

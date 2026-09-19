@@ -1,4 +1,4 @@
-// iTextMo delivery webhook (https://itextmo.netlify.app/documentation → Webhooks).
+// iTextMo delivery webhook (https://itextmo.netlify.app/documentation -> Webhooks).
 //
 // iTextMo calls this with no Supabase JWT, so deploy it with
 //   supabase functions deploy itextmo-webhook --no-verify-jwt
@@ -9,8 +9,8 @@
 //
 // Events: webhook.verify (echo the challenge), message.sent / message.delivered /
 // message.failed (update the matching notification_logs row), message.inbound
-// (logged only — STOP/START is enforced by the gateway itself).
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+// (save the reply in sms_inbox; STOP/START is enforced by the gateway itself).
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 
 const SIGNATURE_TOLERANCE_SECONDS = 300
 
@@ -19,12 +19,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-itextmo-signature',
 }
 
-interface WebhookPayload {
-  event?: string
-  type?: string
-  event_type?: string
-  challenge?: string
-  data?: Record<string, unknown> & { challenge?: string }
+type WebhookPayload = Record<string, unknown> & {
+  event?: unknown
+  type?: unknown
+  event_type?: unknown
+  name?: unknown
+  challenge?: unknown
+  at?: unknown
+  data?: Record<string, unknown> & { challenge?: unknown }
 }
 
 function json(data: unknown, status = 200) {
@@ -66,7 +68,6 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0
 }
 
-// Verify against the RAW body bytes, before any JSON parse.
 async function verifySignature(req: Request, rawBody: string, secret: string): Promise<boolean> {
   const sig = parseSignature(req.headers.get('x-itextmo-signature'))
   if (!sig) return false
@@ -77,29 +78,124 @@ async function verifySignature(req: Request, rawBody: string, secret: string): P
   return timingSafeEqual(expected, sig.v1.toLowerCase())
 }
 
+function parsePayload(req: Request, rawBody: string): WebhookPayload {
+  if (req.method === 'GET') {
+    return Object.fromEntries(new URL(req.url).searchParams.entries())
+  }
+  if (!rawBody) return {}
+  try {
+    return JSON.parse(rawBody) as WebhookPayload
+  } catch {
+    return Object.fromEntries(new URLSearchParams(rawBody))
+  }
+}
+
+function requiredEnv(name: string): string {
+  const value = Deno.env.get(name)?.trim()
+  if (!value) throw new Error(`${name} is not configured`)
+  return value
+}
+
+function serviceClient(): SupabaseClient {
+  return createClient(requiredEnv('SUPABASE_URL'), requiredEnv('SUPABASE_SERVICE_ROLE_KEY'), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}
+
+function stringField(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number') return String(value)
+  }
+  return ''
+}
+
 function str(value: unknown): string | null {
-  return typeof value === 'string' && value ? value : null
+  const text = stringField(value)
+  return text || null
+}
+
+function receivedAt(payload: WebhookPayload): string {
+  const raw = stringField(payload.at, payload.data?.at, payload.data?.received_at, payload.data?.timestamp)
+  if (!raw) return new Date().toISOString()
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString()
+}
+
+function inboundFields(payload: WebhookPayload): {
+  providerMessageId: string | null
+  sender: string
+  message: string
+  receivedAt: string
+  isTest: boolean
+} {
+  const data = payload.data ?? {}
+  return {
+    providerMessageId: stringField(data.id, data.message_id, data.messageId) || null,
+    sender: stringField(data.from, data.sender, data.phone, data.msisdn, data.mobile, payload.from),
+    message: stringField(data.body, data.message, data.text, data.content, payload.body, payload.message),
+    receivedAt: receivedAt(payload),
+    isTest: data.test === true || payload.test === true,
+  }
+}
+
+async function saveInboundSms(service: SupabaseClient, payload: WebhookPayload): Promise<void> {
+  const inbound = inboundFields(payload)
+
+  if (inbound.isTest) {
+    console.log('Synthetic inbound SMS test event ignored')
+    return
+  }
+
+  if (!inbound.sender || !inbound.message) {
+    console.warn('Inbound SMS missing sender or message body; not saved')
+    return
+  }
+
+  const { error } = await service.from('sms_inbox').insert({
+    provider_message_id: inbound.providerMessageId,
+    sender: inbound.sender,
+    message: inbound.message,
+    received_at: inbound.receivedAt,
+    raw_payload: payload,
+  })
+
+  if (error?.code === '23505') {
+    console.log('Duplicate inbound SMS webhook ignored')
+    return
+  }
+
+  if (error) {
+    console.error('sms_inbox insert failed:', error.message)
+    throw error
+  }
+
+  console.log('Inbound SMS saved', {
+    providerMessageId: inbound.providerMessageId,
+    sender: inbound.sender,
+    receivedAt: inbound.receivedAt,
+  })
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (req.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405)
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return json({ success: false, error: 'Method not allowed' }, 405)
+  }
 
   try {
-    const rawBody = await req.text()
-    let payload: WebhookPayload = {}
-    try {
-      payload = rawBody ? (JSON.parse(rawBody) as WebhookPayload) : {}
-    } catch {
-      payload = {}
-    }
-
-    const eventType = payload.event ?? payload.type ?? payload.event_type ?? 'unknown'
+    const rawBody = req.method === 'POST' ? await req.text() : ''
+    const payload = parsePayload(req, rawBody)
     const data = payload.data ?? {}
+    const eventType = stringField(payload.event, payload.type, payload.event_type, payload.name) || 'unknown'
 
-    // Verification handshake: iTextMo POSTs webhook.verify with a random
-    // challenge when the URL is saved; echoing it proves the endpoint is ours.
-    const challenge = payload.challenge ?? data.challenge
+    console.log('iTextMo webhook received')
+
+    const challenge =
+      payload.challenge ??
+      data.challenge ??
+      new URL(req.url).searchParams.get('challenge')
+
     if (eventType === 'webhook.verify' || challenge) {
       console.log('iTextMo webhook verification challenge received')
       return json({ challenge })
@@ -112,27 +208,15 @@ Deno.serve(async (req) => {
         return json({ success: false, error: 'Invalid signature' }, 401)
       }
     } else {
-      // Unsigned delivery receipts can only flip a log row's status, but set
-      // the secret as soon as the webhook is saved so this path goes away.
-      console.warn('ITEXTMO_WEBHOOK_SECRET is not set — accepting unsigned webhook')
+      console.warn('ITEXTMO_WEBHOOK_SECRET is not set - accepting unsigned webhook')
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (!supabaseUrl || !serviceKey) {
-      return json({ success: false, error: 'Server is not configured correctly' }, 500)
-    }
-    const service = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-
+    const service = serviceClient()
     const providerMessageId = str(data.id) ?? str(data.message_id) ?? str(data.messageId)
     const clientRef = str(data.client_ref) ?? str(data.clientRef)
     const failureReason =
       str(data.reason) ?? str(data.error) ?? str(data.failure_reason) ?? str(data.code)
 
-    // Match our log row by the gateway id we stored at send time, falling
-    // back to client_ref (which we set to the notification_logs id).
     const match = providerMessageId
       ? { by: 'provider_message_id', value: providerMessageId }
       : clientRef
@@ -150,9 +234,10 @@ Deno.serve(async (req) => {
       if (error) console.error(`iTextMo ${eventType}: log update failed:`, error.message)
     }
 
+    console.log(`iTextMo event: ${eventType}`)
+
     switch (eventType) {
       case 'message.sent':
-        // Handset actually transmitted it. Never regress a 'delivered' row.
         await applyStatus({ status: 'sent', sent_at: new Date().toISOString() }, ['pending', 'sent'])
         break
 
@@ -170,9 +255,8 @@ Deno.serve(async (req) => {
         break
 
       case 'message.inbound':
-        // Replies (including STOP/START) are handled by the gateway's own
-        // blocklist; we only note that one arrived, never its content.
-        console.log('iTextMo inbound SMS received from', str(data.from) ? 'a known number' : 'unknown')
+        console.log('Inbound SMS received')
+        await saveInboundSms(service, payload)
         break
 
       default:

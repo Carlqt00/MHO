@@ -24,21 +24,21 @@ interface TicketCardProps {
 
 const STYLES: Record<TicketSize, Record<string, string>> = {
   full: {
-    card: 'card p-8 text-center',
+    card: 'card p-4 text-center sm:p-8',
     label: 'text-sm font-semibold uppercase tracking-widest text-emerald-700',
-    number: 'mt-2 text-8xl font-bold text-slate-950',
-    service: 'mt-4 text-lg font-medium text-slate-700',
+    number: 'mt-2 break-all text-[clamp(3.25rem,18vw,6rem)] font-bold leading-none text-slate-950',
+    service: 'mt-4 break-words text-lg font-medium text-slate-700',
     date: 'mt-1 text-slate-500',
-    provider: 'mt-1 text-sm text-slate-400',
+    provider: 'mt-1 break-words text-sm text-slate-400',
     qrWrap: 'mt-6 rounded-2xl bg-emerald-50/70 px-4 py-3',
   },
   compact: {
     card: 'card p-5 text-center',
     label: 'text-xs font-semibold uppercase tracking-widest text-emerald-700',
-    number: 'mt-1 text-5xl font-bold text-slate-950',
-    service: 'mt-3 text-base font-medium text-slate-700',
+    number: 'mt-1 break-all text-5xl font-bold text-slate-950',
+    service: 'mt-3 break-words text-base font-medium text-slate-700',
     date: 'mt-1 text-sm text-slate-500',
-    provider: 'mt-0.5 text-xs text-slate-400',
+    provider: 'mt-0.5 break-words text-xs text-slate-400',
     qrWrap: 'mt-4 rounded-2xl bg-emerald-50/70 px-4 py-3',
   },
 }

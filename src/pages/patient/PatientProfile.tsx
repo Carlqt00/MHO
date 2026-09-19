@@ -157,7 +157,7 @@ export function PatientProfile() {
               </div>
             ) : (
               <div className="table-shell">
-                <table className="data-table">
+                <table className="data-table mobile-card-table">
                   <thead>
                     <tr>
                       <th className="px-4 py-3 font-medium">Date</th>
@@ -169,14 +169,14 @@ export function PatientProfile() {
                   <tbody>
                     {history.map((appt) => (
                       <tr key={appt.id}>
-                        <td className="text-slate-700">
+                        <td data-label="Date" className="text-slate-700">
                           {formatDate(appt.time_slots.slot_datetime)}
                         </td>
-                        <td className="text-slate-700">{appt.services.name}</td>
-                        <td className="text-slate-700">
+                        <td data-label="Service" className="text-slate-700">{appt.services.name}</td>
+                        <td data-label="Provider" className="text-slate-700">
                           {appt.providers.profiles.full_name}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Status" className="px-4 py-3">
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
                           >

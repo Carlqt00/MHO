@@ -63,7 +63,7 @@ export function AdminReports() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="section-title">Reports</h2>
-        <div className="flex gap-1" role="group" aria-label="Date range">
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Date range">
           {PRESETS.map((p) => (
             <button
               key={p}
@@ -105,7 +105,7 @@ export function AdminReports() {
                 Generated {generatedLabel(data.generatedAt)}
               </span>
             </p>
-            <div className="flex gap-2">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
               <button type="button" onClick={() => void exportReportPdf(data)} className="btn-subtle min-h-9 px-3 py-1">
                 Export PDF
               </button>
@@ -129,7 +129,7 @@ export function AdminReports() {
 
           {/* 4. Rates */}
           <Section title="Rates">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Stat label="No-show rate" value={pct(data.rates.noShowRate)} />
               <Stat label="Cancellation rate" value={pct(data.rates.cancelledRate)} />
             </div>
@@ -172,7 +172,7 @@ function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
       <p className="text-sm text-slate-500">{label}</p>
-      <p className="text-2xl font-bold text-slate-950">{value}</p>
+      <p className="break-words text-2xl font-bold text-slate-950">{value}</p>
     </div>
   )
 }
@@ -183,7 +183,7 @@ function CountTable({ rows, firstColumn }: { rows: ReportCount[]; firstColumn: s
   }
   return (
     <div className="table-shell shadow-none">
-      <table className="data-table">
+      <table className="data-table mobile-card-table">
       <thead>
         <tr>
           <th>{firstColumn}</th>
@@ -193,8 +193,8 @@ function CountTable({ rows, firstColumn }: { rows: ReportCount[]; firstColumn: s
       <tbody>
         {rows.map((r) => (
           <tr key={r.name} className="text-slate-700">
-            <td>{r.name}</td>
-            <td>{r.count}</td>
+            <td data-label={firstColumn}>{r.name}</td>
+            <td data-label="Appointments">{r.count}</td>
           </tr>
         ))}
       </tbody>

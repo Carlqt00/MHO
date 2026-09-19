@@ -249,8 +249,8 @@ export function VolumeChart() {
       </ul>
 
       {/* Chart. Empty periods still render as zero-height bars (not gaps). */}
-      <div className="mt-4 overflow-x-auto">
-        <div className="flex min-w-[42rem] items-end gap-1" style={{ height: CHART_HEIGHT + 48 }}>
+      <div className="mt-4 max-w-full overflow-x-auto">
+        <div className="flex min-w-[34rem] items-end gap-1 sm:min-w-[42rem]" style={{ height: CHART_HEIGHT + 48 }}>
           {loading ? (
             <p className="self-center text-sm text-slate-400">Loading…</p>
           ) : (

@@ -115,14 +115,14 @@ export function DoctorSchedule() {
   return (
     <div className="card card-pad">
       {/* One month control drives both sections. */}
-      <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-center gap-3 sm:justify-end">
         <button
           onClick={() => setView(addMonths(view, -1))}
           className="btn-subtle min-h-9 px-3 py-1"
         >
           ← Prev
         </button>
-        <span className="min-w-[9rem] text-center text-base font-semibold text-slate-900">
+        <span className="order-first w-full text-center text-base font-semibold text-slate-900 sm:order-none sm:w-auto sm:min-w-[9rem]">
           {monthLabel}
         </span>
         <button
@@ -175,7 +175,7 @@ function ScheduleSection({
         </div>
       ) : (
         <div className="table-shell">
-          <table className="data-table">
+          <table className="data-table mobile-card-table lg:min-w-[44rem]">
             <thead>
               <tr>
                 <th className="px-3 py-2 font-medium">Date</th>
@@ -192,19 +192,19 @@ function ScheduleSection({
                 const profile = appt.patients?.profiles
                 return (
                   <tr key={appt.id} className="text-slate-700">
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td data-label="Date" className="px-3 py-2 whitespace-nowrap">
                       {formatDate(appt.time_slots.slot_datetime)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td data-label="Time" className="px-3 py-2 whitespace-nowrap">
                       {formatTime(appt.time_slots.slot_datetime)}
                     </td>
-                    <td className="px-3 py-2">{profile?.full_name ?? '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{profile?.phone ?? '—'}</td>
-                    <td className="px-3 py-2">{appt.services.name}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td data-label="Patient" className="px-3 py-2">{profile?.full_name ?? '—'}</td>
+                    <td data-label="Contact" className="px-3 py-2 whitespace-nowrap">{profile?.phone ?? '—'}</td>
+                    <td data-label="Service" className="px-3 py-2">{appt.services.name}</td>
+                    <td data-label="Ticket" className="px-3 py-2 whitespace-nowrap">
                       {appt.queue_tickets?.ticket_number ?? '—'}
                     </td>
-                    <td className="px-3 py-2">
+                    <td data-label="Status" className="px-3 py-2">
                       <span
                         className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
                       >

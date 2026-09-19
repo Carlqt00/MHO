@@ -2,15 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchNotificationLogs,
   fetchNotificationSummary,
+  getSmsInbox,
+  getUnreadSmsCount,
+  markSmsMessageRead,
   sendManualSms,
   type NotificationLog,
   type NotificationStatus,
   type NotificationSummary,
+  type SmsInboxMessage,
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
 import { toCanonicalPhilippineMobile } from '../../lib/phone'
 
 type Filter = NotificationStatus | 'all'
+type Tab = 'log' | 'inbox'
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -67,14 +72,18 @@ function statusLabel(status: NotificationStatus) {
 
 export function AdminNotifications() {
   const [logs, setLogs] = useState<NotificationLog[]>([])
+  const [inbox, setInbox] = useState<SmsInboxMessage[]>([])
   const [summary, setSummary] = useState<NotificationSummary>({
     sent: 0,
     delivered: 0,
     pending: 0,
     failed: 0,
   })
+  const [unreadCount, setUnreadCount] = useState(0)
   const [filter, setFilter] = useState<Filter>('all')
+  const [tab, setTab] = useState<Tab>('log')
   const [loading, setLoading] = useState(true)
+  const [inboxLoading, setInboxLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [recipient, setRecipient] = useState('')
@@ -84,6 +93,11 @@ export function AdminNotifications() {
   const readData = useCallback(
     () => Promise.all([fetchNotificationSummary(), fetchNotificationLogs(filter)]),
     [filter]
+  )
+
+  const readInbox = useCallback(
+    () => Promise.all([getSmsInbox(), getUnreadSmsCount()]),
+    []
   )
 
   const loadData = useCallback(async (options: { clearError?: boolean } = {}) => {
@@ -98,6 +112,19 @@ export function AdminNotifications() {
       setLoading(false)
     }
   }, [readData])
+
+  const loadInbox = useCallback(async (options: { clearError?: boolean } = {}) => {
+    try {
+      const [nextInbox, nextUnreadCount] = await readInbox()
+      setInbox(nextInbox)
+      setUnreadCount(nextUnreadCount)
+      if (options.clearError) setError('')
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to load SMS inbox.'))
+    } finally {
+      setInboxLoading(false)
+    }
+  }, [readInbox])
 
   useEffect(() => {
     let active = true
@@ -121,7 +148,40 @@ export function AdminNotifications() {
     }
   }, [readData])
 
+  useEffect(() => {
+    let active = true
+    readInbox()
+      .then(([nextInbox, nextUnreadCount]) => {
+        if (!active) return
+        setInbox(nextInbox)
+        setUnreadCount(nextUnreadCount)
+      })
+      .catch((err: unknown) => {
+        if (!active) return
+        setError(errorMessage(err, 'Failed to load SMS inbox.'))
+      })
+      .finally(() => {
+        if (active) setInboxLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [readInbox])
+
   const messageCharacters = useMemo(() => message.trim().length, [message])
+
+  const updateReadStatus = async (id: string, isRead: boolean) => {
+    setError('')
+    try {
+      await markSmsMessageRead(id, isRead)
+      setInboxLoading(true)
+      await loadInbox({ clearError: true })
+    } catch (err) {
+      setError(errorMessage(err, 'Could not update the SMS message.'))
+      setInboxLoading(false)
+    }
+  }
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -234,82 +294,188 @@ export function AdminNotifications() {
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold text-slate-900">Notification Log</h3>
-          <p className="mt-1 text-sm text-slate-500">Latest 100 delivery attempts.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Review outbound delivery attempts and inbound patient replies.
+          </p>
         </div>
-        <div className="flex rounded-xl border border-emerald-100 bg-white p-1 shadow-sm">
-          {FILTERS.map((item) => (
+        <div className="flex flex-wrap rounded-xl border border-emerald-100 bg-white p-1 shadow-sm">
+          {[
+            ['log', 'Notification Log'],
+            ['inbox', `SMS Inbox${unreadCount > 0 ? ` (${unreadCount})` : ''}`],
+          ].map(([value, label]) => (
             <button
-              key={item.value}
+              key={value}
               type="button"
-              onClick={() => {
-                setLoading(true)
-                setFilter(item.value)
-              }}
+              onClick={() => setTab(value as Tab)}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                filter === item.value
+                tab === value
                   ? 'bg-emerald-700 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'
               }`}
             >
-              {item.label}
+              {label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="mt-4">
-        {loading ? (
-          <p className="text-slate-400">Loading…</p>
-        ) : logs.length === 0 ? (
-          <div className="empty-state">No notification logs found for this filter.</div>
-        ) : (
-          <div className="table-shell">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Event</th>
-                  <th>Recipient</th>
-                  <th>Message</th>
-                  <th>Status</th>
-                  <th>Date / Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((log) => (
-                  <tr key={log.id}>
-                    <td className="whitespace-nowrap uppercase text-slate-600">{log.type}</td>
-                    <td className="whitespace-nowrap text-slate-600">
-                      {log.event ? (EVENT_LABEL[log.event] ?? log.event) : '—'}
-                    </td>
-                    <td className="whitespace-nowrap font-medium text-slate-800">
-                      {log.recipient}
-                    </td>
-                    <td className="min-w-[16rem] max-w-xl text-slate-600">
-                      <p className="line-clamp-3 whitespace-pre-line">{log.message}</p>
-                      {log.error_message && (
-                        <p className="mt-1 text-xs text-red-600">{log.error_message}</p>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          STATUS_STYLES[log.status]
-                        }`}
-                      >
-                        {statusLabel(log.status)}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap text-slate-500">
-                      {formatDateTime(log.sent_at ?? log.created_at)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {tab === 'log' && (
+        <>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-500">Latest 100 delivery attempts.</p>
+            <div className="flex flex-wrap rounded-xl border border-emerald-100 bg-white p-1 shadow-sm">
+              {FILTERS.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => {
+                    setLoading(true)
+                    setFilter(item.value)
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                    filter === item.value
+                      ? 'bg-emerald-700 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+
+          <div className="mt-4">
+            {loading ? (
+              <p className="text-slate-400">Loading…</p>
+            ) : logs.length === 0 ? (
+              <div className="empty-state">No notification logs found for this filter.</div>
+            ) : (
+              <div className="table-shell">
+                <table className="data-table mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Event</th>
+                      <th>Recipient</th>
+                      <th>Message</th>
+                      <th>Status</th>
+                      <th>Date / Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log) => (
+                      <tr key={log.id}>
+                        <td data-label="Type" className="whitespace-nowrap uppercase text-slate-600">
+                          {log.type}
+                        </td>
+                        <td data-label="Event" className="whitespace-nowrap text-slate-600">
+                          {log.event ? (EVENT_LABEL[log.event] ?? log.event) : '—'}
+                        </td>
+                        <td data-label="Recipient" className="whitespace-nowrap font-medium text-slate-800">
+                          {log.recipient}
+                        </td>
+                        <td data-label="Message" className="max-w-xl text-slate-600 sm:min-w-[16rem]">
+                          <p className="line-clamp-3 whitespace-pre-line">{log.message}</p>
+                          {log.error_message && (
+                            <p className="mt-1 text-xs text-red-600">{log.error_message}</p>
+                          )}
+                        </td>
+                        <td data-label="Status" className="whitespace-nowrap">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              STATUS_STYLES[log.status]
+                            }`}
+                          >
+                            {statusLabel(log.status)}
+                          </span>
+                        </td>
+                        <td data-label="Date / Time" className="whitespace-nowrap text-slate-500">
+                          {formatDateTime(log.sent_at ?? log.created_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {tab === 'inbox' && (
+        <div className="mt-4">
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setInboxLoading(true)
+                void loadInbox({ clearError: true })
+              }}
+              className="btn-subtle min-h-9 px-3 py-1.5 text-sm"
+            >
+              Refresh Inbox
+            </button>
+          </div>
+
+          {inboxLoading ? (
+            <p className="text-slate-400">Loading SMS inbox…</p>
+          ) : inbox.length === 0 ? (
+            <div className="empty-state">No SMS replies received yet.</div>
+          ) : (
+            <div className="table-shell">
+              <table className="data-table mobile-card-table">
+                <thead>
+                  <tr>
+                    <th>Sender</th>
+                    <th>Message</th>
+                    <th>Received</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inbox.map((sms) => {
+                    const sender = toCanonicalPhilippineMobile(sms.sender) ?? sms.sender
+                    return (
+                      <tr key={sms.id}>
+                        <td data-label="Sender" className="whitespace-nowrap font-medium text-slate-800">
+                          {sender}
+                        </td>
+                        <td data-label="Message" className="max-w-xl text-slate-600 sm:min-w-[16rem]">
+                          <p className="whitespace-pre-line">{sms.message}</p>
+                        </td>
+                        <td data-label="Received" className="whitespace-nowrap text-slate-500">
+                          {formatDateTime(sms.received_at)}
+                        </td>
+                        <td data-label="Status" className="whitespace-nowrap">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              sms.is_read
+                                ? 'bg-slate-100 text-slate-600'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {sms.is_read ? 'Read' : 'Unread'}
+                          </span>
+                        </td>
+                        <td data-label="Actions">
+                          <button
+                            type="button"
+                            onClick={() => void updateReadStatus(sms.id, !sms.is_read)}
+                            className="btn-subtle min-h-8 px-3 py-1 text-xs"
+                          >
+                            {sms.is_read ? 'Mark as unread' : 'Mark as read'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   )
 }

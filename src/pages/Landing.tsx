@@ -4,14 +4,14 @@ export function Landing() {
   return (
     <div className="landing-bg min-h-screen">
       <header className="page-shell py-5">
-        <div className="content-shell flex items-center justify-between">
-          <span className="brand-lockup text-lg">
+        <div className="content-shell flex flex-wrap items-center justify-between gap-3">
+          <span className="brand-lockup min-w-0 text-base sm:text-lg">
             <img
               src="/daraga-municipality-seal.svg"
               alt="Municipality of Daraga seal"
-              className="brand-seal"
+              className="brand-seal h-10 w-10 sm:h-12 sm:w-12"
             />
-            <span>MHO Daraga</span>
+            <span className="min-w-0 break-words">MHO Daraga</span>
           </span>
           <Link
             to="/login"
@@ -22,18 +22,18 @@ export function Landing() {
         </div>
       </header>
 
-      <main className="page-shell pb-12 pt-8 sm:pt-14">
+      <main className="page-shell pb-10 pt-4 sm:pb-12 sm:pt-14">
         <div className="content-shell">
           <section className="landing-panel mx-auto max-w-3xl text-center">
             <p className="section-kicker">Daraga Municipal Health Office</p>
             <h1 className="mx-auto mt-4 flex max-w-2xl flex-col items-center gap-1.5 text-center font-bold leading-[1.12] text-slate-950 sm:gap-2">
-              <span className="block text-[clamp(1.625rem,4.25vw,2.5rem)]">
+              <span className="block text-[clamp(1.45rem,8vw,2.5rem)]">
                 MUNICIPAL HEALTH OFFICE
               </span>
-              <span className="block max-w-full text-balance text-[clamp(1.375rem,3.5vw,2rem)]">
+              <span className="block max-w-full text-balance text-[clamp(1.2rem,6vw,2rem)]">
                 CENTRALIZED APPOINTMENT AND TICKETING SYSTEM
               </span>
-              <span className="block text-[clamp(1.625rem,4.25vw,2.5rem)]">
+              <span className="block text-[clamp(1.45rem,8vw,2.5rem)]">
                 IN DARAGA, ALBAY
               </span>
             </h1>

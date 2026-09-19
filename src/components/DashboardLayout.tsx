@@ -21,7 +21,7 @@ export function DashboardLayout({
 }) {
   const { session, logout } = useAuth()
   const navigate = useNavigate()
-  const shellClass = wide ? 'page-shell' : 'mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8'
+  const shellClass = wide ? 'page-shell' : 'mx-auto w-full max-w-6xl px-3 sm:px-5 lg:px-8'
 
   const handleLogout = async () => {
     await logout()
@@ -32,29 +32,29 @@ export function DashboardLayout({
     <div className="min-h-screen">
       <header className="border-b border-emerald-100 bg-white/85 py-4 shadow-sm shadow-emerald-950/5 backdrop-blur">
         <div className={`${shellClass} flex flex-wrap items-center justify-between gap-3`}>
-          <div className="brand-lockup min-w-0">
-            <span className="brand-mark">MHO</span>
+          <div className="brand-lockup min-w-0 flex-1">
+            <span className="brand-mark h-10 w-10 sm:h-11 sm:w-11">MHO</span>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold text-slate-950">{title}</h1>
+              <h1 className="text-lg font-semibold leading-tight text-slate-950 sm:text-xl">{title}</h1>
             {session && (
-              <p className="truncate text-sm font-normal text-slate-500">
+              <p className="break-words text-sm font-normal text-slate-500">
                 {session.fullName} · {ROLE_LABEL[session.role]}
               </p>
             )}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex w-full shrink-0 items-center gap-2 min-[420px]:w-auto sm:gap-3">
             {session?.role === 'patient' && (
               <Link
                 to="/patient/profile"
-                className="btn-subtle"
+                className="btn-subtle flex-1 min-[420px]:flex-none"
               >
                 Profile
               </Link>
             )}
             <button
               onClick={handleLogout}
-              className="btn-subtle"
+              className="btn-subtle flex-1 min-[420px]:flex-none"
             >
               Logout
             </button>

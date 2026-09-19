@@ -81,7 +81,7 @@ export function AdminPasswordResets() {
       )}
 
       <div className="table-shell mt-4">
-        <table className="data-table min-w-[52rem]">
+        <table className="data-table mobile-card-table md:min-w-[52rem]">
           <thead>
             <tr>
               <th>Email / Identifier</th>
@@ -120,18 +120,18 @@ function PasswordResetRow({ request }: { request: PasswordResetRequest }) {
 
   return (
     <tr className="align-top">
-      <td className="break-all text-slate-600">{request.profiles.email ?? '—'}</td>
-      <td className="font-medium text-slate-900">{request.profiles.full_name}</td>
-      <td className="text-slate-600">{ROLE_LABEL[request.profiles.role]}</td>
-      <td className="text-slate-500">{formatDateTime(request.requested_at)}</td>
-      <td>
+      <td data-label="Email" className="break-all text-slate-600">{request.profiles.email ?? '—'}</td>
+      <td data-label="Full Name" className="font-medium text-slate-900">{request.profiles.full_name}</td>
+      <td data-label="Role" className="text-slate-600">{ROLE_LABEL[request.profiles.role]}</td>
+      <td data-label="Requested" className="text-slate-500">{formatDateTime(request.requested_at)}</td>
+      <td data-label="Status">
         <span
           className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[request.status]}`}
         >
           {statusLabel}
         </span>
       </td>
-      <td className="text-slate-500">
+      <td data-label="Completed" className="text-slate-500">
         {request.completed_at ? formatDateTime(request.completed_at) : '—'}
       </td>
     </tr>

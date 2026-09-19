@@ -118,12 +118,12 @@ export function PatientDashboard() {
                       {STATUS_LABEL[appt.status] ?? appt.status}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-500">
+                  <p className="break-words text-sm text-slate-500">
                     {appt.providers.profiles.full_name} ·{' '}
                     {formatSlot(appt.time_slots.slot_datetime)}
                   </p>
                   {ticket && (
-                    <p className="text-sm font-medium text-emerald-700">
+                    <p className="break-words text-sm font-medium text-emerald-700">
                       Ticket: {ticket.ticket_number} · Queue #{ticket.queue_position}
                     </p>
                   )}

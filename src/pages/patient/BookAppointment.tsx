@@ -19,7 +19,7 @@ import {
 } from '../../lib/api'
 
 function formatSlot(iso: string) {
-  return new Date(iso).toLocaleString('en-PH', {
+  return new Date(iso).toLocaleString('en-US', {
     timeZone: 'Asia/Manila',
     weekday: 'short',
     year: 'numeric',
@@ -31,7 +31,7 @@ function formatSlot(iso: string) {
 }
 
 function slotTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-PH', {
+  return new Date(iso).toLocaleTimeString('en-US', {
     timeZone: 'Asia/Manila',
     hour: '2-digit',
     minute: '2-digit',
@@ -45,7 +45,7 @@ function manilaDateOf(iso: string) {
 
 // Long, readable label for a 'YYYY-MM-DD' Manila date.
 function longDateLabel(dateStr: string) {
-  return new Date(`${dateStr}T00:00:00+08:00`).toLocaleDateString('en-PH', {
+  return new Date(`${dateStr}T00:00:00+08:00`).toLocaleDateString('en-US', {
     timeZone: 'Asia/Manila',
     weekday: 'long',
     year: 'numeric',
@@ -67,16 +67,17 @@ function addMonths(m: Month, n: number): Month {
   return { year: Math.floor(total / 12), month: ((total % 12) + 12) % 12 }
 }
 
-const WEEKDAYS = ['Lin', 'Lun', 'Mar', 'Miy', 'Huw', 'Biy', 'Sab'] // Sunday-start
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] // Sunday-start
 
 // Why a date is not bookable, for the calendar label. Only called when there
 // is nothing bookable (remaining === 0); it separates the three states the old
 // single "Puno" conflated. See service_daily_slot_status (migration 0013).
 function unavailableLabel(s: DaySlotStatus | undefined): string {
-  if (!s || s.total === 0) return 'Walang schedule' // no slots exist that day
-  if (s.upcoming > 0) return 'Puno' // upcoming slots exist but all booked
-  if (s.unbooked > 0) return 'Lipas na' // open slots existed, times already passed
-  return 'Puno' // all booked (and past)
+  if (!s || s.total === 0) return 'No schedule' // no slots exist that day
+  if (s.is_full) return 'Full' // service/day capacity has been reached
+  if (s.upcoming > 0) return 'Full' // generated upcoming slots exist, but none are open
+  if (s.unbooked > 0) return 'Past times' // open slots existed, times already passed
+  return 'Full' // all generated slots are booked
 }
 
 type Step = 1 | 2 | 3 | 4
@@ -217,7 +218,7 @@ export function BookAppointment() {
       const data = await fetchOpenSlots(selectedService!.id, dateStr)
       setSlots(data)
       if (data.length === 0)
-        setError('Wala nang available na oras sa petsang ito. Pumili ng ibang petsa.')
+        setError('No available times remain on this date. Choose another date.')
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -297,7 +298,7 @@ export function BookAppointment() {
             qrCode={booking.qr_code}
           >
             <div className="alert-warn mt-4">
-              Mangyaring dumating ng 15 minuto bago ang inyong appointment.
+              Please arrive 15 minutes before your appointment.
             </div>
 
             {smsWarning && (
@@ -310,7 +311,7 @@ export function BookAppointment() {
               onClick={() => navigate('/patient')}
               className="btn-primary mt-6 w-full"
             >
-              Bumalik sa Dashboard
+              Back to Dashboard
             </button>
           </TicketCard>
         </div>
@@ -349,11 +350,11 @@ export function BookAppointment() {
       )}
 
       {/* Progress */}
-      <div className="mb-8 flex w-full gap-2 overflow-x-auto pb-2 text-sm">
+      <div className="mb-8 grid w-full grid-cols-4 gap-1 text-xs sm:gap-2 sm:text-sm">
         {['Service', 'Date', 'Time', 'Confirm'].map((label, i) => (
-          <div key={label} className="flex items-center gap-2">
+          <div key={label} className="flex min-w-0 items-center justify-center gap-1 sm:gap-2">
             <span
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                 step > i + 1
                   ? 'bg-emerald-700 text-white'
                   : step === i + 1
@@ -363,10 +364,10 @@ export function BookAppointment() {
             >
               {i + 1}
             </span>
-            <span className={step === i + 1 ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+            <span className={`min-w-0 truncate ${step === i + 1 ? 'font-semibold text-slate-900' : 'text-slate-400'}`}>
               {label}
             </span>
-            {i < 3 && <span className="text-slate-300">›</span>}
+            {i < 3 && <span className="hidden text-slate-300 sm:inline">›</span>}
           </div>
         ))}
       </div>
@@ -381,23 +382,23 @@ export function BookAppointment() {
       {step === 1 && (
         <div>
           <Link
-            to="/"
+            to="/patient"
             className="mb-3 inline-flex text-sm font-medium text-emerald-800 hover:text-emerald-950"
           >
-            ← Back to Home
+            ← Back to Dashboard
           </Link>
           <h2 className="mb-4 section-title">Choose a Service</h2>
           {servicesLoading ? (
             <p className="text-slate-400">Loading…</p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
               {services.map((svc) => (
                 <button
                   key={svc.id}
                   onClick={() => handleSelectService(svc)}
-                  className="card card-interactive flex min-h-28 items-center justify-center p-6 text-center"
+                  className="card card-interactive flex min-h-24 items-center justify-center p-4 text-center sm:min-h-28 sm:p-6"
                 >
-                  <p className="text-xl font-semibold text-slate-900">{svc.name}</p>
+                  <p className="text-lg font-semibold text-slate-900 sm:text-xl">{svc.name}</p>
                 </button>
               ))}
             </div>
@@ -408,13 +409,13 @@ export function BookAppointment() {
       {/* ── Step 2: Date (calendar) ── */}
       {step === 2 && (
         <div>
-          <div className="mb-4 flex items-center gap-3">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             {isReschedule ? (
               <Link
                 to="/patient"
                 className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
               >
-                ← Bumalik sa Dashboard
+                ← Back to Dashboard
               </Link>
             ) : (
               <button
@@ -424,15 +425,15 @@ export function BookAppointment() {
                 }}
                 className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
               >
-                ← Baguhin ang serbisyo
+                ← Change Service
               </button>
             )}
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
+            <span className="max-w-full break-words rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
               {selectedService?.name}
             </span>
           </div>
 
-          <h2 className="mb-4 section-title">Piliin ang petsa</h2>
+          <h2 className="mb-4 section-title">Choose a Date</h2>
 
           {/* Month navigation */}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -441,10 +442,10 @@ export function BookAppointment() {
               disabled={monthIndex(view) <= monthIndex(currentMonth)}
               className="btn-subtle min-h-9 px-3 py-1"
             >
-              ← Nakaraan
+              ← Previous
             </button>
-            <span className="text-base font-semibold text-slate-900">
-              {new Date(view.year, view.month, 1).toLocaleDateString('en-PH', {
+            <span className="order-first w-full text-center text-base font-semibold text-slate-900 sm:order-none sm:w-auto">
+              {new Date(view.year, view.month, 1).toLocaleDateString('en-US', {
                 month: 'long',
                 year: 'numeric',
               })}
@@ -454,7 +455,7 @@ export function BookAppointment() {
               disabled={monthIndex(view) >= monthIndex(maxMonth)}
               className="btn-subtle min-h-9 px-3 py-1"
             >
-              Susunod →
+              Next →
             </button>
           </div>
 
@@ -476,30 +477,31 @@ export function BookAppointment() {
               const dateStr = `${view.year}-${pad2(view.month + 1)}-${pad2(day)}`
               const isPast = dateStr < today
               const status = availability[dateStr]
-              const remaining = status?.remaining ?? 0
-              const disabled = isPast || remaining === 0
+              const remaining = status?.remaining_slots ?? status?.remaining ?? 0
+              const hasSchedule = Boolean(status && status.total > 0)
+              const hasOpenTimeSlot = (status?.open_slots ?? 0) > 0
+              const disabled = isPast || !hasSchedule || status?.is_full || !hasOpenTimeSlot
               return (
                 <button
                   key={dateStr}
                   onClick={() => handleSelectDate(dateStr)}
                   disabled={disabled}
                   aria-disabled={disabled}
-                  className={`flex min-h-16 min-w-0 flex-col items-center justify-center rounded-xl border p-1 text-center text-xs transition sm:min-h-[4.5rem] ${
+                  className={`flex min-h-14 min-w-0 flex-col items-center justify-center rounded-xl border p-1 text-center text-[10px] leading-tight transition sm:min-h-[4.5rem] sm:text-xs ${
                     disabled
                       ? 'cursor-not-allowed border-dashed border-slate-200 bg-slate-50 text-slate-400 line-through'
                       : 'border-emerald-100 bg-white text-slate-800 hover:border-emerald-500 hover:bg-emerald-50'
                   }`}
                 >
-                  <span className="text-base font-semibold">{day}</span>
-                  {/* Non-color signal: available days show a count; unavailable
-                      days show an explicit reason ("—" past, "Walang schedule",
-                      "Puno", or "Lipas na") and are line-through. */}
+                  <span className="text-sm font-semibold sm:text-base">{day}</span>
+                  {/* Non-color signal: available days show service capacity
+                      remaining; unavailable days show an explicit reason. */}
                   {availLoading ? (
                     <span className="text-[10px] text-slate-300">…</span>
                   ) : isPast ? (
                     <span className="text-[10px]">—</span>
-                  ) : remaining > 0 ? (
-                    <span className="text-[11px]">
+                  ) : !disabled && remaining > 0 ? (
+                    <span className="text-[10px] sm:text-[11px]">
                       {remaining} slot{remaining === 1 ? '' : 's'}
                     </span>
                   ) : (
@@ -510,11 +512,11 @@ export function BookAppointment() {
             })}
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Naka-disable ang mga araw na hindi mai-book: <span className="font-medium">“—”</span>{' '}
-            nakaraang petsa · <span className="font-medium">“Walang schedule”</span> walang oras na
-            binuksan para sa serbisyong ito · <span className="font-medium">“Puno”</span> puno na
-            ang lahat ng slot · <span className="font-medium">“Lipas na”</span> may bakante kanina
-            pero lumipas na ang oras ngayong araw.
+            Disabled dates: <span className="font-medium">“—”</span> past date ·{' '}
+            <span className="font-medium">“No schedule”</span> no generated time slots for this
+            service · <span className="font-medium">“Full”</span> service capacity or generated time
+            slots are full · <span className="font-medium">“Past times”</span> open times existed
+            earlier today but have already passed.
           </p>
         </div>
       )}
@@ -531,27 +533,27 @@ export function BookAppointment() {
               }}
               className="text-sm font-medium text-emerald-800 hover:text-emerald-950"
             >
-              ← Baguhin ang petsa
+              ← Change Date
             </button>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
+            <span className="max-w-full break-words rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
               {selectedService?.name}
             </span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+            <span className="max-w-full break-words rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
               {longDateLabel(selectedDate)}
             </span>
           </div>
 
-          <h2 className="mb-4 section-title">Piliin ang oras</h2>
+          <h2 className="mb-4 section-title">Choose a Time</h2>
 
           {slotsLoading ? (
-            <p className="text-slate-400">Hinahanap ang available na oras…</p>
+            <p className="text-slate-400">Finding available times…</p>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-2">
               {slots.map((slot) => (
                 <button
                   key={slot.id}
                   onClick={() => handleSelectSlot(slot)}
-                  className="btn-subtle"
+                  className="btn-subtle w-full flex-wrap gap-1"
                 >
                   {slotTime(slot.slot_datetime)}
                   <span className="ml-1 text-xs text-slate-400">
@@ -567,11 +569,11 @@ export function BookAppointment() {
       {/* ── Step 4: Confirm ── */}
       {step === 4 && selectedSlot && (
         <div className="mx-auto max-w-md">
-          <h2 className="mb-4 section-title">Kumpirmahin ang appointment</h2>
+          <h2 className="mb-4 section-title">Confirm Appointment</h2>
           <div className="card card-pad space-y-4">
-            <InfoRow label="Serbisyo" value={selectedService?.name ?? ''} />
-            <InfoRow label="Doktor" value={selectedSlot.providers.profiles.full_name} />
-            <InfoRow label="Petsa at Oras" value={formatSlot(selectedSlot.slot_datetime)} />
+            <InfoRow label="Service" value={selectedService?.name ?? ''} />
+            <InfoRow label="Provider" value={selectedSlot.providers.profiles.full_name} />
+            <InfoRow label="Date and Time" value={formatSlot(selectedSlot.slot_datetime)} />
           </div>
 
           {hasConflict && (
@@ -580,8 +582,8 @@ export function BookAppointment() {
               role="alert"
             >
               {conflictSameServiceDate
-                ? 'May booking ka na para sa serbisyong ito sa petsang ito. Pumili ng ibang petsa o serbisyo. / You already have a booking for this service on this date.'
-                : 'May booking ka na sa oras na ito. Pumili ng ibang oras. / You already have a booking at this time.'}
+                ? 'You already have a booking for this service on this date. Choose another date or service.'
+                : 'You already have a booking at this time. Choose another time.'}
             </div>
           )}
 
@@ -594,7 +596,7 @@ export function BookAppointment() {
               }}
               className="btn-secondary"
             >
-              ← Baguhin ang oras
+              ← Change Time
             </button>
             <button
               onClick={handleConfirm}
@@ -603,11 +605,11 @@ export function BookAppointment() {
             >
               {bookingBusy
                 ? isReschedule
-                  ? 'Inililipat…'
-                  : 'Nag-bo-book…'
+                  ? 'Rescheduling…'
+                  : 'Booking…'
                 : isReschedule
-                  ? 'I-confirm ang bagong oras'
-                  : 'I-confirm ang Appointment'}
+                  ? 'Confirm New Time'
+                  : 'Confirm Appointment'}
             </button>
           </div>
         </div>
@@ -618,9 +620,9 @@ export function BookAppointment() {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4 text-sm">
+    <div className="flex flex-col gap-1 text-sm min-[420px]:flex-row min-[420px]:justify-between min-[420px]:gap-4">
       <span className="text-slate-500">{label}</span>
-      <span className="text-right font-medium text-slate-900">{value}</span>
+      <span className="break-words font-medium text-slate-900 min-[420px]:text-right">{value}</span>
     </div>
   )
 }

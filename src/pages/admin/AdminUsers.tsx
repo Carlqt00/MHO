@@ -118,7 +118,7 @@ export function AdminUsers() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search name or email…"
-          className="form-control min-w-[16rem] flex-1"
+          className="form-control min-w-0 flex-1 basis-64"
         />
         <select
           value={roleFilter}
@@ -142,7 +142,7 @@ export function AdminUsers() {
 
       {/* Table */}
       <div className="table-shell mt-4">
-        <table className="data-table min-w-[36rem]">
+        <table className="data-table mobile-card-table md:min-w-[36rem]">
           <thead>
             <tr>
               <th className="px-4 py-3 font-semibold">Name</th>
@@ -230,7 +230,7 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Temporary password (shown once)
             </p>
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
               <code className="break-all font-mono text-sm text-slate-900">
                 {result.generatedPassword}
               </code>
@@ -318,7 +318,7 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      <div className="mt-4 flex gap-3">
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
         <button
           type="submit"
           disabled={busy}
@@ -377,20 +377,20 @@ function UserRow({
 
   return (
     <tr className="align-top">
-      <td className="font-medium text-slate-900">
+      <td data-label="Name" className="font-medium text-slate-900">
         {user.full_name || <span className="text-slate-400">—</span>}
         {isSelf && <span className="ml-2 text-xs text-slate-400">(you)</span>}
       </td>
-      <td className="break-all text-slate-600">{user.email ?? '—'}</td>
-      <td>
+      <td data-label="Email" className="break-all text-slate-600">{user.email ?? '—'}</td>
+      <td data-label="Role">
         <span
           className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE[user.role]}`}
         >
           {ROLE_LABEL[user.role]}
         </span>
       </td>
-      <td className="text-slate-500">{formatDate(user.created_at)}</td>
-      <td>
+      <td data-label="Created" className="text-slate-500">{formatDate(user.created_at)}</td>
+      <td data-label="Actions">
         {mode === 'view' && (
           <button
             onClick={() => setMode('edit')}
@@ -433,7 +433,7 @@ function UserRow({
                 className={inputCls}
               />
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setMode('confirm')}
                 disabled={newRole === user.role}
@@ -458,7 +458,7 @@ function UserRow({
               <span className="font-medium">{ROLE_LABEL[user.role]}</span> to{' '}
               <span className="font-medium">{ROLE_LABEL[newRole]}</span>? Takes effect immediately.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={confirm}
                 disabled={busy}

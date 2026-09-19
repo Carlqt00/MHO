@@ -192,8 +192,8 @@ export function AdminAnnouncements() {
             <div key={a.id} className="card card-pad">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-slate-900">{a.title}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="min-w-0 break-words font-semibold text-slate-900">{a.title}</h3>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                         a.published ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
@@ -251,7 +251,7 @@ export function AdminAnnouncements() {
                   )}
                 </div>
 
-                <div className="flex shrink-0 flex-wrap gap-2">
+                <div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto">
                   {a.published && (
                     <button
                       onClick={() => askSms(a)}
@@ -277,7 +277,7 @@ export function AdminAnnouncements() {
                     Edit
                   </button>
                   {confirmDelete === a.id ? (
-                    <span className="inline-flex items-center gap-1">
+                    <span className="inline-flex flex-wrap items-center gap-1">
                       <button
                         onClick={() => remove(a.id)}
                         disabled={busyId === a.id}
@@ -381,7 +381,7 @@ function AnnouncementForm({
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
-      <div className="mt-4 flex gap-3">
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
         <button
           type="submit"
           disabled={busy}

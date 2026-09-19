@@ -122,11 +122,11 @@ update public.patients set birthdate = '1972-03-15', address = 'Brgy. Tagas, Dar
 -- ------------------------------------------------------------
 -- Services
 -- ------------------------------------------------------------
-insert into public.services (name, description) values
-  ('Immunization',     'Bakuna para sa mga bata at matatanda (childhood and adult vaccines)'),
-  ('Prenatal',         'Prenatal check-up para sa mga buntis (maternal care visits)'),
-  ('General Check-up', 'Pangkalahatang konsulta (general medical consultation)'),
-  ('Dental',           'Serbisyong dental — bunot, linis, at konsulta (extraction, cleaning, consultation)');
+insert into public.services (name, description, daily_capacity) values
+  ('Immunization',     'Bakuna para sa mga bata at matatanda (childhood and adult vaccines)', 20),
+  ('Prenatal',         'Prenatal check-up para sa mga buntis (maternal care visits)', 30),
+  ('General Check-up', 'Pangkalahatang konsulta (general medical consultation)', 30),
+  ('Dental',           'Serbisyong dental — bunot, linis, at konsulta (extraction, cleaning, consultation)', 15);
 
 -- ------------------------------------------------------------
 -- Provider availability — MHO facility hours

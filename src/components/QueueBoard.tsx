@@ -172,21 +172,21 @@ export function QueueBoard() {
         <div className="grid gap-6 lg:grid-cols-2">
           {queues.map((q) => (
             <div key={q.providerId} className="card overflow-hidden">
-              <div className="border-b border-emerald-100 px-5 py-4">
-                <p className="font-semibold text-slate-900">{q.providerName}</p>
+              <div className="border-b border-emerald-100 px-4 py-4 sm:px-5">
+                <p className="break-words font-semibold text-slate-900">{q.providerName}</p>
               </div>
 
-              <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                     Now Serving
                   </p>
                   {q.nowServing ? (
                     <>
-                      <p className="text-5xl font-bold text-emerald-700">
+                      <p className="break-all text-4xl font-bold text-emerald-700 sm:text-5xl">
                         {q.nowServing.ticket_number}
                       </p>
-                      <p className="mt-1 text-sm text-slate-600">
+                      <p className="mt-1 break-words text-sm text-slate-600">
                         {q.nowServing.appointments.patients.profiles.full_name} ·{' '}
                         {q.nowServing.appointments.services.name}
                       </p>
@@ -208,7 +208,7 @@ export function QueueBoard() {
                 </button>
               </div>
 
-              <div className="border-t border-emerald-100 px-5 py-4">
+              <div className="border-t border-emerald-100 px-4 py-4 sm:px-5">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                   Waiting ({q.waiting.length})
                 </p>
@@ -222,12 +222,12 @@ export function QueueBoard() {
                       return (
                         <li
                           key={t.id}
-                          className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                          className="grid gap-2 py-2 text-sm sm:grid-cols-[auto_1fr_auto_auto] sm:items-center"
                         >
                           <span className="font-mono font-semibold text-slate-700">
                             {t.ticket_number}
                           </span>
-                          <span className="min-w-0 flex-1 text-slate-600">
+                          <span className="min-w-0 break-words text-slate-600">
                             {t.appointments.patients.profiles.full_name}
                             {checkedIn && (
                               <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
@@ -235,11 +235,11 @@ export function QueueBoard() {
                               </span>
                             )}
                           </span>
-                          <span className="text-slate-400">
+                          <span className="min-w-0 break-words text-slate-400 sm:text-right">
                             {t.appointments.services.name} ·{' '}
                             {slotTime(t.appointments.time_slots.slot_datetime)}
                           </span>
-                          <span className="flex gap-1">
+                          <span className="flex flex-wrap gap-1 sm:justify-end">
                             {!checkedIn && (
                               <button
                                 onClick={() => handleStatus(t, 'checked_in')}

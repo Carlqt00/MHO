@@ -43,16 +43,16 @@ export function Checkin() {
 
   return (
     <div className="min-h-screen">
-      <header className="px-4 py-5 sm:px-6">
+      <header className="px-3 py-5 sm:px-6">
         <div className="mx-auto max-w-md">
-          <span className="brand-lockup text-lg">
-            <span className="brand-mark">MHO</span>
+          <span className="brand-lockup min-w-0 text-base sm:text-lg">
+            <span className="brand-mark h-10 w-10 sm:h-11 sm:w-11">MHO</span>
             <span>MHO Daraga</span>
           </span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-md px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-md px-3 py-6 sm:px-6 sm:py-8">
         <h1 className="mb-6 text-center text-2xl font-bold text-slate-950">Check-in Status</h1>
 
         {loading ? (
@@ -66,11 +66,13 @@ export function Checkin() {
             <p className="mt-1 text-sm">Ticket not found.</p>
           </div>
         ) : (
-          <div className="card p-8 text-center">
+          <div className="card p-4 text-center sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-600">
               Queue Ticket
             </p>
-            <p className="mt-2 text-7xl font-bold text-slate-950">{status.ticket_number}</p>
+            <p className="mt-2 break-all text-[clamp(3rem,17vw,4.5rem)] font-bold leading-none text-slate-950">
+              {status.ticket_number}
+            </p>
 
             <div className="mt-4 inline-block rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800">
               {TICKET_STATUS_LABEL[status.status] ?? status.status}
@@ -97,9 +99,9 @@ export function Checkin() {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4">
+    <div className="flex flex-col gap-1 min-[420px]:flex-row min-[420px]:justify-between min-[420px]:gap-4">
       <dt className="text-slate-500">{label}</dt>
-      <dd className="text-right font-medium text-slate-900">{value}</dd>
+      <dd className="break-words font-medium text-slate-900 min-[420px]:text-right">{value}</dd>
     </div>
   )
 }
