@@ -47,7 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fullName: string
     email: string
     phone: string
+    barangay: string
+    purok: string
     password: string
+    privacyConsentAccepted: boolean
+    privacyNoticeVersion: string
   }) => {
     const s = await auth.registerPatient(input)
     setSession(s)

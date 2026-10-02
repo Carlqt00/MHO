@@ -30,12 +30,12 @@ export function DashboardLayout({
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-emerald-100 bg-white/85 py-4 shadow-sm shadow-emerald-950/5 backdrop-blur">
+      <header className="border-b border-emerald-100 bg-white/90 py-3 shadow-sm shadow-emerald-950/5 backdrop-blur">
         <div className={`${shellClass} flex flex-wrap items-center justify-between gap-3`}>
           <div className="brand-lockup min-w-0 flex-1">
-            <span className="brand-mark h-10 w-10 sm:h-11 sm:w-11">MHO</span>
+            <span className="brand-mark h-11 w-11 sm:h-12 sm:w-12">MHO</span>
             <div className="min-w-0">
-              <h1 className="text-lg font-semibold leading-tight text-slate-950 sm:text-xl">{title}</h1>
+              <h1 className="text-lg font-semibold leading-tight tracking-tight text-slate-950 sm:text-xl">{title}</h1>
             {session && (
               <p className="break-words text-sm font-normal text-slate-500">
                 {session.fullName} · {ROLE_LABEL[session.role]}
@@ -54,7 +54,7 @@ export function DashboardLayout({
             )}
             <button
               onClick={handleLogout}
-              className="btn-subtle flex-1 min-[420px]:flex-none"
+              className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800 min-[420px]:flex-none"
             >
               Logout
             </button>

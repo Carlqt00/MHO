@@ -2,6 +2,7 @@
 // the shared report-data shape. Manila calendar dates as 'YYYY-MM-DD'; date
 // math runs on UTC-midnight Dates (time component is never read).
 import { mondayOf } from './volume'
+import type { VolumeBucket } from './volume'
 
 export type RangePreset = 'week' | 'month' | 'year'
 
@@ -28,6 +29,8 @@ export interface ReportData {
     total: number
   }
   rates: { noShowRate: number; cancelledRate: number }
+  volume: VolumeBucket[]
+  volumeMode: 'day' | 'month'
   byService: { name: string; count: number }[]
   byProvider: { name: string; count: number }[]
   patients: { total: number; newInRange: number; active: number }
@@ -86,6 +89,28 @@ export function presetRange(preset: RangePreset, today: string): ReportRange {
     case 'year':
       return { preset, from: `${y}-01-01`, to: `${y}-12-31`, label: String(y), fileLabel: String(y) }
   }
+}
+
+export function reportVolumePeriods(range: ReportRange): string[] {
+  const out: string[] = []
+  if (range.preset === 'year') {
+    const year = Number(range.from.slice(0, 4))
+    for (let month = 0; month < 12; month++) {
+      out.push(fmtYMD(new Date(Date.UTC(year, month, 1))))
+    }
+    return out
+  }
+
+  let current = range.from
+  while (current <= range.to) {
+    out.push(current)
+    current = addDays(current, 1)
+  }
+  return out
+}
+
+export function reportVolumeRpc(preset: RangePreset): string {
+  return preset === 'year' ? 'appointment_volume_by_month' : 'appointment_volume_by_day'
 }
 
 export const PRESET_LABEL: Record<RangePreset, string> = {

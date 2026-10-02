@@ -274,7 +274,7 @@ export function BookAppointment() {
         const result = await bookAppointment(selectedSlot.id)
         setBooking(result)
         if (result.smsNotificationFailed) {
-          setSmsWarning('Appointment booked successfully, but the SMS notification could not be sent.')
+          setSmsWarning('Appointment created successfully, but the SMS notification could not be sent.')
         }
       }
     } catch (e) {
@@ -287,7 +287,7 @@ export function BookAppointment() {
   // ── Ticket (after a successful confirmation) ─────────────────
   if (booking) {
     return (
-      <DashboardLayout title={isReschedule ? 'Nailipat ang Appointment!' : 'Appointment Booked!'}>
+      <DashboardLayout title={isReschedule ? 'Nailipat ang Appointment!' : 'Appointment Created!'}>
         <div className="mx-auto max-w-md">
           <TicketCard
             size="full"
@@ -340,7 +340,7 @@ export function BookAppointment() {
   }
 
   return (
-    <DashboardLayout title={isReschedule ? 'Ilipat ang Appointment' : 'Book an Appointment'}>
+    <DashboardLayout title={isReschedule ? 'Ilipat ang Appointment' : 'Create an Appointment'}>
       {rescheduling && (
         <div className="alert-warn mb-6" role="status">
           Kasalukuyang iskedyul: <strong>{rescheduling.services.name}</strong> ·{' '}

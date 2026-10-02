@@ -19,6 +19,17 @@ function periodLine(data: ReportData): string {
   return `Period: ${data.range.label}  (${data.range.from} to ${data.range.to})`
 }
 
+function volumeLabel(period: string, mode: ReportData['volumeMode']): string {
+  const [year, month, day] = period.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.toLocaleDateString('en-PH', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: mode === 'day' ? 'numeric' : undefined,
+    year: mode === 'month' ? 'numeric' : undefined,
+  })
+}
+
 export async function exportReportPdf(data: ReportData): Promise<void> {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
@@ -53,6 +64,11 @@ export async function exportReportPdf(data: ReportData): Promise<void> {
   write('Rates', 13, true)
   write(`No-show rate: ${pct(data.rates.noShowRate)}`)
   write(`Cancellation rate: ${pct(data.rates.cancelledRate)}`, 11, false, 22)
+
+  write('Patient Volume', 13, true)
+  if (data.volume.length === 0) write('No appointments in this period.')
+  else data.volume.forEach((r) => write(`${volumeLabel(r.period, data.volumeMode)}: ${r.total}`))
+  y += 6
 
   write('By Service', 13, true)
   if (data.byService.length === 0) write('No appointments in this period.')
@@ -91,6 +107,12 @@ export async function exportReportExcel(data: ReportData): Promise<void> {
     ['Rates'],
     ['No-show rate', pct(data.rates.noShowRate)],
     ['Cancellation rate', pct(data.rates.cancelledRate)],
+    [],
+    ['Patient Volume'],
+    ['Period', 'Appointments'],
+    ...(data.volume.length
+      ? data.volume.map((r) => [volumeLabel(r.period, data.volumeMode), r.total])
+      : [['No appointments in this period.']]),
     [],
     ['By Service', 'Count'],
     ...(data.byService.length

@@ -77,7 +77,7 @@ export function PatientDashboard() {
           to="/patient/book"
           className="btn-primary w-full sm:w-auto"
         >
-          + Book an Appointment
+          + Create an Appointment
         </Link>
       </div>
 
@@ -97,8 +97,8 @@ export function PatientDashboard() {
         <p className="text-slate-400">Loading…</p>
       ) : appointments.length === 0 ? (
         <div className="empty-state">
-          <p className="text-lg font-medium">Wala pang appointment.</p>
-          <p className="mt-1 text-sm">Click "Book an Appointment" to get started.</p>
+          <p className="text-lg font-medium">No active appointments right now.</p>
+          <p className="mt-1 text-sm">Create an appointment when you need a new visit.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -135,7 +135,7 @@ export function PatientDashboard() {
                       to={`/patient/book?reschedule=${appt.id}`}
                       className="btn-secondary w-full text-center sm:w-auto"
                     >
-                      Ilipat ang oras
+                      Change Time
                     </Link>
                     <button
                       onClick={() => handleCancel(appt.id)}

@@ -17,7 +17,8 @@ Takes ~10 minutes. Everything below is idempotent — safe to re-run.
 ```bash
 supabase secrets set \
   ITEXTMO_API_KEY=sk_live_PASTE_FROM_PHONE \
-  ITEXTMO_ENDPOINT=https://itextmo-backend-dev.vercel.app/api/v1/messages
+  ITEXTMO_ENDPOINT=https://itextmo-backend-dev.vercel.app/api/v1/messages \
+  AUTO_CANCEL_CRON_SECRET=PASTE_LONG_RANDOM_SECRET
 supabase secrets list
 ```
 
@@ -28,16 +29,19 @@ Notes (verified 2026-09-19 against the live gateway):
   screen shows only the host, and `itextmo-backend.vercel.app` (no `-dev`)
   redirects here.
 - Optional later: `ITEXTMO_WEBHOOK_SECRET` (see step 4).
+- `AUTO_CANCEL_CRON_SECRET` protects the scheduled missed-check-in function.
 
 ## 2. Apply the database migration
 
 Either:
 
 ```bash
-supabase db push            # applies 0021, 0022, 0023 in order
+supabase db push            # applies 0021, 0022, 0023, 0024 in order
 ```
 
-or paste `supabase/migrations/0023_appointment_actions_and_sms.sql` (after `0021_daily_service_capacity.sql` and `0022_sms_inbox.sql`, in that order) into the
+or paste `supabase/migrations/0023_appointment_actions_and_sms.sql` and then
+`supabase/migrations/0024_auto_cancel_missed_appointments.sql` (after
+`0021_daily_service_capacity.sql` and `0022_sms_inbox.sql`, in that order) into the
 Dashboard → **SQL Editor** and run it (that's how earlier migrations were applied).
 
 It adds: `reschedule_appointment`, `set_appointment_status`, an updated
@@ -45,18 +49,40 @@ It adds: `reschedule_appointment`, `set_appointment_status`, an updated
 `notification_logs`, `announcements.sms_sent_at`, and
 `password_reset_requests.code_attempts`.
 
+`0024` adds the server-side missed-check-in rule: booked appointments whose
+current `appointment_at + 15 minutes <= now()` are atomically cancelled,
+their slot is released, their waiting queue ticket is closed, and one
+auto-cancellation SMS event is allowed per appointment. It also protects staff
+check-in from accepting an appointment after the same deadline.
+
 ## 3. Deploy the functions
 
 ```bash
 supabase functions deploy send-sms
+supabase functions deploy auto-cancel-missed-appointments --no-verify-jwt
 supabase functions deploy send-announcement-sms
 supabase functions deploy password-reset-request  --no-verify-jwt
 supabase functions deploy password-reset-complete --no-verify-jwt
 supabase functions deploy itextmo-webhook         --no-verify-jwt
 ```
 
-`--no-verify-jwt` is required on the three public ones (forgot-password runs
-before login; the webhook is called by iTextMo, which signs with HMAC instead).
+`--no-verify-jwt` is required on the public/scheduled ones (forgot-password runs
+before login; the webhook is called by iTextMo, which signs with HMAC instead;
+the auto-cancel function checks `AUTO_CANCEL_CRON_SECRET`).
+
+Create a Supabase Scheduled Function for
+`auto-cancel-missed-appointments` every 5 minutes. Use method `POST`, body
+`{}`, and send either:
+
+```text
+Authorization: Bearer <AUTO_CANCEL_CRON_SECRET>
+```
+
+or:
+
+```text
+x-cron-secret: <AUTO_CANCEL_CRON_SECRET>
+```
 
 ## 4. Webhook — already configured, nothing to create
 

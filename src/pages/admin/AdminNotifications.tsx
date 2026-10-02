@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AdminEmptyState,
+  AdminPageHeader,
+  AdminStatCard,
+  StatusBadge,
+} from '../../components/AdminPrimitives'
+import {
   fetchNotificationLogs,
   fetchNotificationSummary,
+  getSmsConversation,
   getSmsInbox,
   getUnreadSmsCount,
   markSmsMessageRead,
@@ -9,6 +16,7 @@ import {
   type NotificationLog,
   type NotificationStatus,
   type NotificationSummary,
+  type SmsConversationMessage,
   type SmsInboxMessage,
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
@@ -17,28 +25,26 @@ import { toCanonicalPhilippineMobile } from '../../lib/phone'
 type Filter = NotificationStatus | 'all'
 type Tab = 'log' | 'inbox'
 
+const SMS_CHAR_LIMIT = 480
+
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'sent', label: 'Sent' },
-  { value: 'delivered', label: 'Delivered' },
   { value: 'pending', label: 'Pending' },
   { value: 'failed', label: 'Failed' },
 ]
 
-// "Sent" = accepted/transmitted by the gateway; "Delivered" = handset receipt
-// confirmed by the iTextMo webhook.
-const SUMMARY_CARDS: { key: keyof NotificationSummary; label: string; tone: string }[] = [
-  { key: 'sent', label: 'Sent', tone: 'text-emerald-700' },
-  { key: 'delivered', label: 'Delivered', tone: 'text-sky-700' },
-  { key: 'pending', label: 'Pending', tone: 'text-amber-600' },
-  { key: 'failed', label: 'Failed', tone: 'text-red-600' },
+const SUMMARY_CARDS: { key: keyof NotificationSummary; label: string; detail: string; tone: 'emerald' | 'amber' | 'red' }[] = [
+  { key: 'sent', label: 'Sent', detail: 'Accepted or delivered', tone: 'emerald' },
+  { key: 'pending', label: 'Pending', detail: 'Awaiting gateway result', tone: 'amber' },
+  { key: 'failed', label: 'Failed', detail: 'Needs review', tone: 'red' },
 ]
 
-const STATUS_STYLES: Record<NotificationStatus, string> = {
-  sent: 'bg-emerald-100 text-emerald-800',
-  delivered: 'bg-sky-100 text-sky-800',
-  pending: 'bg-amber-100 text-amber-800',
-  failed: 'bg-red-100 text-red-700',
+const STATUS_TONE: Record<NotificationStatus, 'emerald' | 'amber' | 'red'> = {
+  sent: 'emerald',
+  delivered: 'emerald',
+  pending: 'amber',
+  failed: 'red',
 }
 
 // notification_logs.event → short label for the table.
@@ -67,6 +73,7 @@ function formatDateTime(iso: string) {
 }
 
 function statusLabel(status: NotificationStatus) {
+  if (status === 'delivered') return 'Sent'
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
@@ -89,6 +96,12 @@ export function AdminNotifications() {
   const [recipient, setRecipient] = useState('')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
+  const [conversationFor, setConversationFor] = useState<SmsInboxMessage | null>(null)
+  const [conversationMessages, setConversationMessages] = useState<SmsConversationMessage[]>([])
+  const [conversationLoading, setConversationLoading] = useState(false)
+  const [replyMessage, setReplyMessage] = useState('')
+  const [replyError, setReplyError] = useState('')
+  const [replySending, setReplySending] = useState(false)
 
   const readData = useCallback(
     () => Promise.all([fetchNotificationSummary(), fetchNotificationLogs(filter)]),
@@ -170,6 +183,8 @@ export function AdminNotifications() {
   }, [readInbox])
 
   const messageCharacters = useMemo(() => message.trim().length, [message])
+  const replyCharacters = useMemo(() => replyMessage.trim().length, [replyMessage])
+  const conversationPhone = conversationFor ? toCanonicalPhilippineMobile(conversationFor.sender) : null
 
   const updateReadStatus = async (id: string, isRead: boolean) => {
     setError('')
@@ -180,6 +195,91 @@ export function AdminNotifications() {
     } catch (err) {
       setError(errorMessage(err, 'Could not update the SMS message.'))
       setInboxLoading(false)
+    }
+  }
+
+  const loadConversation = useCallback(async (phone: string) => {
+    setConversationLoading(true)
+    try {
+      setConversationMessages(await getSmsConversation(phone))
+      setReplyError('')
+    } catch (err) {
+      setReplyError(errorMessage(err, 'Could not load this SMS conversation.'))
+    } finally {
+      setConversationLoading(false)
+    }
+  }, [])
+
+  const openConversation = (sms: SmsInboxMessage) => {
+    setError('')
+    setNotice('')
+    setReplyError('')
+    setReplyMessage('')
+    setConversationMessages([])
+    setConversationFor(sms)
+    const phone = toCanonicalPhilippineMobile(sms.sender)
+    if (phone) void loadConversation(phone)
+    else setReplyError('This SMS does not have a valid Philippine mobile number to reply to.')
+  }
+
+  const closeConversation = () => {
+    if (replySending) return
+    setConversationFor(null)
+    setConversationMessages([])
+    setReplyMessage('')
+    setReplyError('')
+  }
+
+  const submitReply = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!conversationFor) return
+
+    setReplyError('')
+    setError('')
+    setNotice('')
+
+    const phone = toCanonicalPhilippineMobile(conversationFor.sender)
+    const trimmedMessage = replyMessage.trim()
+
+    if (!phone) {
+      setReplyError('This SMS does not have a valid Philippine mobile number to reply to.')
+      return
+    }
+    if (!trimmedMessage) {
+      setReplyError('Reply message is required.')
+      return
+    }
+    if (trimmedMessage.length > SMS_CHAR_LIMIT) {
+      setReplyError(`Reply is too long. Please keep it under ${SMS_CHAR_LIMIT} characters.`)
+      return
+    }
+
+    setReplySending(true)
+    try {
+      let readUpdateFailed = false
+      await sendManualSms({ recipient: phone, message: trimmedMessage })
+      if (!conversationFor.is_read) {
+        try {
+          await markSmsMessageRead(conversationFor.id, true)
+        } catch (err) {
+          readUpdateFailed = true
+          setError(errorMessage(err, 'SMS reply sent, but the message could not be marked as read.'))
+        }
+      }
+      setNotice('SMS reply sent.')
+      setConversationFor((current) => current ? { ...current, is_read: true } : current)
+      setReplyMessage('')
+      setLoading(true)
+      setInboxLoading(true)
+      await Promise.all([
+        loadData({ clearError: !readUpdateFailed }),
+        loadInbox({ clearError: !readUpdateFailed }),
+        loadConversation(phone),
+      ])
+    } catch (err) {
+      setReplyError(errorMessage(err, 'SMS reply could not be sent.'))
+    } finally {
+      setReplySending(false)
     }
   }
 
@@ -199,8 +299,8 @@ export function AdminNotifications() {
       setError('Message is required.')
       return
     }
-    if (trimmedMessage.length > 480) {
-      setError('Message is too long. Please keep it under 480 characters.')
+    if (trimmedMessage.length > SMS_CHAR_LIMIT) {
+      setError(`Message is too long. Please keep it under ${SMS_CHAR_LIMIT} characters.`)
       return
     }
 
@@ -222,51 +322,53 @@ export function AdminNotifications() {
   }
 
   return (
-    <section>
-      <div>
-        <h2 className="section-title">Notification Center</h2>
-        <p className="mt-1 muted">
-          Send SMS notifications and review sent, pending, and failed delivery attempts.
-        </p>
-      </div>
+    <section className="space-y-6">
+      <AdminPageHeader
+        title="Notification Center"
+        subtitle="Send SMS notifications and review outbound delivery attempts and patient replies."
+      />
 
       {error && (
-        <div className="alert-error mt-4" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
       {notice && (
-        <div className="alert-success mt-4" role="status">
+        <div className="alert-success" role="status">
           {notice}
         </div>
       )}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         {SUMMARY_CARDS.map((card) => (
-          <div key={card.key} className="card card-pad">
-            <p className="text-sm font-medium text-slate-500">{card.label}</p>
-            <p className={`mt-2 text-3xl font-bold ${card.tone}`}>
-              {loading ? <span className="text-slate-300">…</span> : summary[card.key]}
-            </p>
-          </div>
+          <AdminStatCard
+            key={card.key}
+            label={card.label}
+            value={loading ? <span className="text-slate-300">…</span> : summary[card.key]}
+            detail={card.detail}
+            tone={card.tone}
+          />
         ))}
       </div>
 
-      <form onSubmit={submit} className="card card-pad mt-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <form onSubmit={submit} className="card overflow-hidden">
+        <div className="border-b border-emerald-100 bg-white px-4 py-4 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-slate-900">Send SMS Notification</h3>
+            <p className="section-kicker">Send SMS</p>
+            <h3 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Manual notification</h3>
             <p className="mt-1 text-sm text-slate-500">
-              Messages are sent through the secure Supabase Edge Function.
+              Messages are sent through the secure Supabase Edge Function using MHO Daraga branding.
             </p>
           </div>
           <button type="submit" disabled={sending} className="btn-primary w-full sm:w-auto">
             {sending ? 'Sending…' : 'Send SMS'}
           </button>
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(14rem,20rem)_1fr]">
+        <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(14rem,20rem)_1fr]">
           <label className="block">
             <span className="label">Recipient / phone number</span>
             <input
@@ -286,12 +388,12 @@ export function AdminNotifications() {
               placeholder="Type the SMS message here."
               className="form-control resize-y"
             />
-            <span className="mt-1 block text-xs text-slate-400">{messageCharacters}/480</span>
+            <span className="mt-1 block text-xs text-slate-400">{messageCharacters}/{SMS_CHAR_LIMIT}</span>
           </label>
         </div>
       </form>
 
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold text-slate-900">Notification Log</h3>
           <p className="mt-1 text-sm text-slate-500">
@@ -348,7 +450,7 @@ export function AdminNotifications() {
             {loading ? (
               <p className="text-slate-400">Loading…</p>
             ) : logs.length === 0 ? (
-              <div className="empty-state">No notification logs found for this filter.</div>
+              <AdminEmptyState>No notification logs found for this filter.</AdminEmptyState>
             ) : (
               <div className="table-shell">
                 <table className="data-table mobile-card-table">
@@ -381,13 +483,9 @@ export function AdminNotifications() {
                           )}
                         </td>
                         <td data-label="Status" className="whitespace-nowrap">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              STATUS_STYLES[log.status]
-                            }`}
-                          >
+                          <StatusBadge tone={STATUS_TONE[log.status]}>
                             {statusLabel(log.status)}
-                          </span>
+                          </StatusBadge>
                         </td>
                         <td data-label="Date / Time" className="whitespace-nowrap text-slate-500">
                           {formatDateTime(log.sent_at ?? log.created_at)}
@@ -420,7 +518,7 @@ export function AdminNotifications() {
           {inboxLoading ? (
             <p className="text-slate-400">Loading SMS inbox…</p>
           ) : inbox.length === 0 ? (
-            <div className="empty-state">No SMS replies received yet.</div>
+            <AdminEmptyState>No SMS replies received yet.</AdminEmptyState>
           ) : (
             <div className="table-shell">
               <table className="data-table mobile-card-table">
@@ -448,24 +546,33 @@ export function AdminNotifications() {
                           {formatDateTime(sms.received_at)}
                         </td>
                         <td data-label="Status" className="whitespace-nowrap">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              sms.is_read
-                                ? 'bg-slate-100 text-slate-600'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
+                          <StatusBadge tone={sms.is_read ? 'slate' : 'emerald'}>
                             {sms.is_read ? 'Read' : 'Unread'}
-                          </span>
+                          </StatusBadge>
                         </td>
                         <td data-label="Actions">
-                          <button
-                            type="button"
-                            onClick={() => void updateReadStatus(sms.id, !sms.is_read)}
-                            className="btn-subtle min-h-8 px-3 py-1 text-xs"
-                          >
-                            {sms.is_read ? 'Mark as unread' : 'Mark as read'}
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void updateReadStatus(sms.id, !sms.is_read)}
+                              className="btn-subtle min-h-8 px-3 py-1 text-xs"
+                            >
+                              {sms.is_read ? 'Mark as unread' : 'Mark as read'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openConversation(sms)}
+                              disabled={!toCanonicalPhilippineMobile(sms.sender)}
+                              className="btn-primary min-h-8 px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                              title={
+                                toCanonicalPhilippineMobile(sms.sender)
+                                  ? 'Open SMS conversation'
+                                  : 'Cannot reply: invalid sender number'
+                              }
+                            >
+                              Open Conversation
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -474,6 +581,127 @@ export function AdminNotifications() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {conversationFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-3 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sms-conversation-title"
+        >
+          <form
+            onSubmit={submitReply}
+            className="card flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col p-4 shadow-xl shadow-emerald-950/15 sm:p-6"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 id="sms-conversation-title" className="font-semibold text-slate-900">
+                  SMS Conversation
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Recipient:{' '}
+                  <span className="font-medium text-slate-800">
+                    {conversationPhone ?? conversationFor.sender}
+                  </span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeConversation}
+                disabled={replySending}
+                className="btn-subtle min-h-8 px-3 py-1 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-emerald-100 bg-slate-50 p-3">
+              {conversationLoading ? (
+                <p className="text-sm text-slate-400">Loading conversation…</p>
+              ) : conversationMessages.length === 0 ? (
+                <AdminEmptyState>No messages found for this phone number.</AdminEmptyState>
+              ) : (
+                <div className="space-y-3">
+                  {conversationMessages.map((item) => {
+                    const outbound = item.direction === 'outbound'
+                    return (
+                      <div
+                        key={`${item.direction}-${item.id}`}
+                        className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-xl px-3 py-2 text-sm shadow-sm sm:max-w-[70%] ${
+                            outbound
+                              ? 'bg-emerald-700 text-white'
+                              : 'border border-emerald-100 bg-white text-slate-700'
+                          }`}
+                        >
+                          <p
+                            className={`text-xs font-semibold ${
+                              outbound ? 'text-emerald-50' : 'text-emerald-800'
+                            }`}
+                          >
+                            {outbound ? 'MHO' : 'Patient'}
+                          </p>
+                          <p className="mt-1 whitespace-pre-line break-words">{item.message}</p>
+                          <p
+                            className={`mt-2 text-xs ${
+                              outbound ? 'text-emerald-50/80' : 'text-slate-400'
+                            }`}
+                          >
+                            {formatDateTime(item.created_at)}
+                            {item.status ? ` · ${statusLabel(item.status)}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {replyError && (
+              <div className="alert-error mt-4" role="alert">
+                {replyError}
+              </div>
+            )}
+
+            <label className="mt-4 block">
+              <span className="label">Reply message</span>
+              <textarea
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                rows={5}
+                maxLength={SMS_CHAR_LIMIT}
+                className="form-control resize-y"
+                placeholder="Type your reply."
+                disabled={replySending}
+              />
+              <span className="mt-1 block text-xs text-slate-400">
+                {replyCharacters}/{SMS_CHAR_LIMIT}
+              </span>
+            </label>
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeConversation}
+                disabled={replySending}
+                className="btn-secondary"
+              >
+                Close
+              </button>
+              <button
+                type="submit"
+                disabled={replySending || !conversationPhone || replyCharacters === 0}
+                className="btn-primary"
+              >
+                {replySending ? 'Sending…' : 'Send Reply'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </section>

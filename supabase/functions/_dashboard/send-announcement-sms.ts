@@ -43,7 +43,7 @@ export const DEFAULT_ITEXTMO_ENDPOINT = 'https://api.itextmo.com/v1/messages'
 // notification never burns more than ~3 segments of a metered SIM plan.
 export const MAX_SMS_LENGTH = 480
 
-export const SMS_SENDER_PREFIX = 'MHO Malilipot'
+export const SMS_SENDER_PREFIX = 'MHO Daraga'
 
 export class HttpError extends Error {
   status: number
@@ -316,7 +316,7 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
-// "MHO Malilipot: <title> — <body>", trimmed to the SMS cap on a word boundary.
+// "MHO Daraga: <title> — <body>", trimmed to the SMS cap on a word boundary.
 export function composeAnnouncementSms(title: string, body: string): string {
   const flatBody = body.replace(/\s*\n+\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
   const full = `${SMS_SENDER_PREFIX}: ${title.trim()} — ${flatBody}`

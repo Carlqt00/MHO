@@ -25,7 +25,7 @@ export const DEFAULT_ITEXTMO_ENDPOINT = 'https://api.itextmo.com/v1/messages'
 // notification never burns more than ~3 segments of a metered SIM plan.
 export const MAX_SMS_LENGTH = 480
 
-export const SMS_SENDER_PREFIX = 'MHO Malilipot'
+export const SMS_SENDER_PREFIX = 'MHO Daraga'
 
 export class HttpError extends Error {
   status: number

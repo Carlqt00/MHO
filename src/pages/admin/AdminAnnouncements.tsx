@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import {
+  AdminEmptyState,
+  AdminPageHeader,
+  StatusBadge,
+} from '../../components/AdminPrimitives'
+import {
   fetchAllAnnouncements,
   createAnnouncement,
   updateAnnouncement,
@@ -136,14 +141,11 @@ export function AdminAnnouncements() {
   }
 
   return (
-    <section>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="section-title">Announcements</h2>
-          <p className="mt-1 muted">
-            Post advisories shown on every dashboard. Drafts stay private until published.
-          </p>
-        </div>
+    <section className="space-y-6">
+      <AdminPageHeader
+        title="Announcements"
+        subtitle="Post advisories shown on every dashboard. Drafts stay private until published."
+        actions={
         <button
           onClick={() => setEditing('new')}
           disabled={editing !== null}
@@ -151,7 +153,8 @@ export function AdminAnnouncements() {
         >
           + New announcement
         </button>
-      </div>
+        }
+      />
 
       {editing && (
         <AnnouncementForm
@@ -166,27 +169,27 @@ export function AdminAnnouncements() {
       )}
 
       {error && (
-        <div className="alert-error mt-4" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
       {smsNotice && (
         <div
-          className={`${smsNoticeKind === 'warn' ? 'alert-warn' : 'alert-success'} mt-4`}
+          className={smsNoticeKind === 'warn' ? 'alert-warn' : 'alert-success'}
           role="status"
         >
           {smsNotice}
         </div>
       )}
 
-      <div className="mt-6 space-y-3">
+      <div className="space-y-3">
         {loading ? (
           <p className="text-slate-400">Loading…</p>
         ) : items.length === 0 ? (
-          <div className="empty-state">
+          <AdminEmptyState>
             No announcements yet. Click "New announcement" to post the first advisory.
-          </div>
+          </AdminEmptyState>
         ) : (
           items.map((a) => (
             <div key={a.id} className="card card-pad">
@@ -194,13 +197,9 @@ export function AdminAnnouncements() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="min-w-0 break-words font-semibold text-slate-900">{a.title}</h3>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        a.published ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
+                    <StatusBadge tone={a.published ? 'emerald' : 'slate'}>
                       {a.published ? 'Published' : 'Draft'}
-                    </span>
+                    </StatusBadge>
                   </div>
                   <p className="mt-1 text-xs text-slate-400">
                     {formatDate(a.created_at)}
@@ -351,7 +350,7 @@ function AnnouncementForm({
   }
 
   return (
-    <form onSubmit={submit} className="card card-pad mt-4">
+    <form onSubmit={submit} className="card card-pad">
       <label className="block">
         <span className="label">Title</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} />

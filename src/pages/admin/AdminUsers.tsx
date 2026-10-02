@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  AdminEmptyState,
+  AdminPageHeader,
+  AdminStatCard,
+  StatusBadge,
+} from '../../components/AdminPrimitives'
 import { useAuth } from '../../hooks/useAuth'
 import {
   fetchAllProfiles,
@@ -24,12 +30,12 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrator',
 }
 
-const ROLE_BADGE: Record<Role, string> = {
-  patient: 'bg-gray-100 text-gray-700',
-  doctor: 'bg-emerald-100 text-emerald-800',
-  nurse: 'bg-sky-100 text-sky-800',
-  staff: 'bg-amber-100 text-amber-800',
-  admin: 'bg-indigo-100 text-indigo-800',
+const ROLE_BADGE_TONE: Record<Role, 'slate' | 'emerald' | 'sky' | 'amber' | 'indigo'> = {
+  patient: 'slate',
+  doctor: 'emerald',
+  nurse: 'sky',
+  staff: 'amber',
+  admin: 'indigo',
 }
 
 function formatDate(iso: string) {
@@ -86,20 +92,25 @@ export function AdminUsers() {
   }, [users, search, roleFilter])
 
   return (
-    <section>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="section-title">User &amp; Role Management</h2>
-          <p className="mt-1 muted">
-            Create staff, provider, and admin accounts and manage their roles.
-          </p>
-        </div>
+    <section className="space-y-6">
+      <AdminPageHeader
+        title="Users & Roles"
+        subtitle="Create staff, provider, and administrator accounts and manage role assignments."
+        actions={
         <button
           onClick={() => setShowAdd((s) => !s)}
           className="btn-primary"
         >
           {showAdd ? 'Close' : '+ Add user'}
         </button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="Total Users" value={loading ? <span className="text-slate-300">…</span> : users.length} detail="All profiles" />
+        <AdminStatCard label="Providers" value={users.filter((u) => u.role === 'doctor' || u.role === 'nurse').length} detail="Doctor and nurse accounts" tone="sky" />
+        <AdminStatCard label="Patients" value={users.filter((u) => u.role === 'patient').length} detail="Registered patients" />
+        <AdminStatCard label="Administrators" value={users.filter((u) => u.role === 'admin').length} detail="Admin accounts" tone="indigo" />
       </div>
 
       {showAdd && (
@@ -112,7 +123,7 @@ export function AdminUsers() {
       )}
 
       {/* Filters */}
-      <div className="mt-6 flex flex-wrap gap-3">
+      <div className="card card-pad flex flex-wrap gap-3">
         <input
           type="search"
           value={search}
@@ -135,13 +146,13 @@ export function AdminUsers() {
       </div>
 
       {error && (
-        <div className="alert-error mt-4" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
       {/* Table */}
-      <div className="table-shell mt-4">
+      <div className="table-shell">
         <table className="data-table mobile-card-table md:min-w-[36rem]">
           <thead>
             <tr>
@@ -162,7 +173,7 @@ export function AdminUsers() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                  No users match your filters.
+                  <AdminEmptyState>No users match your filters.</AdminEmptyState>
                 </td>
               </tr>
             ) : (
@@ -383,11 +394,7 @@ function UserRow({
       </td>
       <td data-label="Email" className="break-all text-slate-600">{user.email ?? '—'}</td>
       <td data-label="Role">
-        <span
-          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE[user.role]}`}
-        >
-          {ROLE_LABEL[user.role]}
-        </span>
+        <StatusBadge tone={ROLE_BADGE_TONE[user.role]}>{ROLE_LABEL[user.role]}</StatusBadge>
       </td>
       <td data-label="Created" className="text-slate-500">{formatDate(user.created_at)}</td>
       <td data-label="Actions">

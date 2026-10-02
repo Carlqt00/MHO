@@ -8,6 +8,7 @@
 
 import { supabase } from './supabase'
 import { errorMessage } from './errors'
+import { isDaragaBarangay } from './daragaBarangays'
 
 export type Role = 'patient' | 'doctor' | 'nurse' | 'staff' | 'admin'
 
@@ -73,13 +74,35 @@ export async function registerPatient(input: {
   fullName: string
   email: string
   phone: string
+  barangay: string
+  purok: string
   password: string
+  privacyConsentAccepted: boolean
+  privacyNoticeVersion: string
 }): Promise<Session> {
+  const fullName = input.fullName.trim()
+  const barangay = input.barangay.trim()
+  const purok = input.purok.trim()
+  const privacyNoticeVersion = input.privacyNoticeVersion.trim()
+
+  if (!isDaragaBarangay(barangay)) throw new Error('Please select your Barangay.')
+  if (!purok) throw new Error('Purok is required.')
+  if (!input.privacyConsentAccepted || !privacyNoticeVersion) {
+    throw new Error('You must agree to the User & Privacy Guidelines to create an account.')
+  }
+
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
     password: input.password,
     options: {
-      data: { full_name: input.fullName, phone: input.phone },
+      data: {
+        full_name: fullName,
+        phone: input.phone,
+        barangay,
+        purok,
+        privacy_consent_accepted: true,
+        privacy_notice_version: privacyNoticeVersion,
+      },
     },
   })
 
@@ -114,7 +137,7 @@ export async function registerPatient(input: {
   // transaction as the auth user, and self-signup is always 'patient'.
   return {
     userId: data.user.id,
-    fullName: input.fullName.trim(),
+    fullName,
     role: 'patient',
     email: input.email,
     passwordChangeRequired: false,
@@ -126,23 +149,35 @@ export async function changeOwnPassword(input: {
   newPassword: string
   requireCurrentPassword: boolean
 }): Promise<Session> {
+  if (input.requireCurrentPassword) {
+    await verifyOwnPassword(input.currentPassword ?? '')
+  }
+  return updateOwnPassword(input.newPassword)
+}
+
+export async function verifyOwnPassword(currentPassword: string): Promise<void> {
   const { data: userData, error: userErr } = await supabase.auth.getUser()
   const email = userData.user?.email
   if (userErr || !userData.user || !email) {
     throw new Error('Kailangan munang mag-login bago magpalit ng password.')
   }
 
-  if (input.requireCurrentPassword) {
-    const { error: verifyErr } = await supabase.auth.signInWithPassword({
-      email,
-      password: input.currentPassword ?? '',
-    })
-    if (verifyErr) {
-      throw new Error('Hindi tama ang kasalukuyang password.')
-    }
+  const { error: verifyErr } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  })
+  if (verifyErr) {
+    throw new Error('Current password is incorrect.')
+  }
+}
+
+export async function updateOwnPassword(newPassword: string): Promise<Session> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser()
+  if (userErr || !userData.user) {
+    throw new Error('Kailangan munang mag-login bago magpalit ng password.')
   }
 
-  const { error: updateErr } = await supabase.auth.updateUser({ password: input.newPassword })
+  const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword })
   if (updateErr) {
     throw new Error(
       errorMessage(updateErr, 'Hindi ma-update ang password. Pakisubukan ulit mamaya.')

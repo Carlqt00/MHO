@@ -1,5 +1,6 @@
 ﻿import { supabase } from './supabase'
 import { errorMessage } from './errors'
+import { toCanonicalPhilippineMobile } from './phone'
 import type { Role } from './auth'
 import type { VolumeBucket } from './volume'
 
@@ -294,7 +295,7 @@ export async function setAppointmentStatus(
   appointmentId: string,
   status: ReceptionStatus
 ): Promise<SmsNotificationAttempt> {
-  const { error } = await supabase.rpc('set_appointment_status', {
+  const { data, error } = await supabase.rpc('set_appointment_status', {
     p_appointment_id: appointmentId,
     p_status: status,
   })
@@ -306,6 +307,12 @@ export async function setAppointmentStatus(
       throw new Error('Only clinic personnel can update appointment status.')
     if (raw.includes('ERR_NOT_FOUND')) throw new Error('Appointment not found.')
     throw new Error(errorMessage(error, GENERIC_ERR))
+  }
+  const result = data as { appointment_status?: string; reason?: string } | null
+  if (result?.reason === 'missed_checkin_deadline') {
+    throw new Error(
+      'This appointment was automatically cancelled because the 15-minute check-in deadline has passed.'
+    )
   }
   const sms = await trySendAppointmentSms(
     status === 'checked_in' ? 'appointment_checked_in' : 'appointment_no_show',
@@ -321,6 +328,7 @@ export type AppointmentSmsEvent =
   | 'appointment_checked_in'
   | 'appointment_served'
   | 'appointment_no_show'
+  | 'appointment_auto_cancelled_missed_checkin'
   | 'queue_now_serving'
 
 export interface AppointmentSmsResult {
@@ -385,6 +393,15 @@ export interface SmsInboxMessage {
   received_at: string
   is_read: boolean
   created_at: string
+}
+
+export interface SmsConversationMessage {
+  id: string
+  direction: 'inbound' | 'outbound'
+  phone: string
+  message: string
+  created_at: string
+  status?: NotificationStatus
 }
 
 export async function fetchNotificationLogs(
@@ -475,6 +492,65 @@ export async function markSmsMessageRead(id: string, isRead: boolean): Promise<v
   if (error) throw new Error(errorMessage(error, 'Failed to update SMS read status.'))
 }
 
+export async function getSmsConversation(phone: string): Promise<SmsConversationMessage[]> {
+  const canonical = toCanonicalPhilippineMobile(phone)
+  if (!canonical) throw new Error('A valid Philippine mobile number is required.')
+
+  const [inbound, outbound] = await Promise.all([
+    supabase
+      .from('sms_inbox')
+      .select('id, sender, message, received_at')
+      .order('received_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('notification_logs')
+      .select('id, recipient, message, status, created_at, sent_at')
+      .eq('type', 'sms')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ])
+
+  if (inbound.error) throw new Error(errorMessage(inbound.error, 'Failed to load inbound SMS messages.'))
+  if (outbound.error) throw new Error(errorMessage(outbound.error, 'Failed to load outbound SMS messages.'))
+
+  const inboundMessages = ((inbound.data ?? []) as {
+    id: string
+    sender: string
+    message: string
+    received_at: string
+  }[])
+    .filter((row) => toCanonicalPhilippineMobile(row.sender) === canonical)
+    .map((row): SmsConversationMessage => ({
+      id: row.id,
+      direction: 'inbound',
+      phone: canonical,
+      message: row.message,
+      created_at: row.received_at,
+    }))
+
+  const outboundMessages = ((outbound.data ?? []) as {
+    id: string
+    recipient: string
+    message: string
+    status: NotificationStatus
+    created_at: string
+    sent_at: string | null
+  }[])
+    .filter((row) => toCanonicalPhilippineMobile(row.recipient) === canonical)
+    .map((row): SmsConversationMessage => ({
+      id: row.id,
+      direction: 'outbound',
+      phone: canonical,
+      message: row.message,
+      created_at: row.sent_at ?? row.created_at,
+      status: row.status,
+    }))
+
+  return [...inboundMessages, ...outboundMessages].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  )
+}
+
 async function trySendAppointmentSms(
   event: AppointmentSmsEvent,
   appointmentId: string
@@ -503,12 +579,31 @@ export interface QueueTicket {
   }
 }
 
-// Today's date window in Asia/Manila, as UTC ISO strings
-function manilaDayWindow(): { start: string; end: string } {
+export interface UpcomingAppointment {
+  id: string
+  status: string
+  appointment_at: string
+  services: { name: string }
+  patients: { profiles: { full_name: string } }
+  providers: { profiles: { full_name: string } }
+  queue_tickets: {
+    ticket_number: string
+    queue_position: number
+    status: string
+  } | null
+}
+
+// Today's Asia/Manila day boundaries, returned as UTC ISO strings for
+// timestamptz comparisons.
+function manilaDayWindow(): { today: string; start: string; end: string; tomorrowStart: string } {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+  const tomorrow = new Date(`${today}T00:00:00+08:00`)
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
   return {
+    today,
     start: new Date(`${today}T00:00:00+08:00`).toISOString(),
     end: new Date(`${today}T23:59:59+08:00`).toISOString(),
+    tomorrowStart: tomorrow.toISOString(),
   }
 }
 
@@ -529,13 +624,58 @@ export async function fetchTodayQueue(): Promise<QueueTicket[]> {
     `
     )
     .in('status', ['waiting', 'now_serving'])
-    .neq('appointments.status', 'cancelled')
+    .in('appointments.status', ['booked', 'checked_in'])
     .gte('appointments.time_slots.slot_datetime', start)
     .lte('appointments.time_slots.slot_datetime', end)
     .order('queue_position')
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
   return data as unknown as QueueTicket[]
+}
+
+export async function fetchUpcomingAppointments(): Promise<UpcomingAppointment[]> {
+  const { tomorrowStart } = manilaDayWindow()
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(
+      `
+      id, status, appointment_at,
+      services ( name ),
+      patients ( profiles ( full_name ) ),
+      providers ( profiles ( full_name ) ),
+      queue_tickets ( ticket_number, queue_position, status )
+    `
+    )
+    .eq('status', 'booked')
+    .gte('appointment_at', tomorrowStart)
+    .order('appointment_at', { ascending: true })
+    .limit(100)
+
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+
+  const first = <T>(value: T | T[] | null | undefined): T | null =>
+    Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
+
+  return (data ?? []).map((row) => {
+    const typed = row as unknown as {
+      id: string
+      status: string
+      appointment_at: string
+      services: UpcomingAppointment['services'] | UpcomingAppointment['services'][]
+      patients: UpcomingAppointment['patients'] | UpcomingAppointment['patients'][]
+      providers: UpcomingAppointment['providers'] | UpcomingAppointment['providers'][]
+      queue_tickets: UpcomingAppointment['queue_tickets'] | UpcomingAppointment['queue_tickets'][]
+    }
+    return {
+      id: typed.id,
+      status: typed.status,
+      appointment_at: typed.appointment_at,
+      services: first(typed.services) ?? { name: '' },
+      patients: first(typed.patients) ?? { profiles: { full_name: '' } },
+      providers: first(typed.providers) ?? { profiles: { full_name: '' } },
+      queue_tickets: first(typed.queue_tickets),
+    }
+  })
 }
 
 export interface AdvanceResult {
@@ -597,6 +737,7 @@ export async function fetchAdminStats(): Promise<AdminStats> {
         head: true,
       })
       .eq('status', 'waiting')
+      .in('appointments.status', ['booked', 'checked_in'])
       .gte('appointments.time_slots.slot_datetime', start)
       .lte('appointments.time_slots.slot_datetime', end),
   ])
@@ -884,13 +1025,11 @@ export async function addAvailability(input: {
   if (error) {
     if (error.code === '23505') {
       throw new Error(
-        'May availability window na para sa araw at oras na ito. Pumili ng ibang oras. / An availability window for that day and start time already exists.'
+        'This day and start time already has a schedule window.'
       )
     }
     if (error.code === '23514') {
-      throw new Error(
-        'Dapat mas huli ang oras ng pagtatapos kaysa sa pagsisimula. / The end time must be after the start time.'
-      )
+      throw new Error('The end time must be after the start time.')
     }
     throw new Error(errorMessage(error, GENERIC_ERR))
   }
@@ -938,7 +1077,7 @@ export async function addTimeOff(input: {
   if (error) {
     if (error.code === '23505') {
       throw new Error(
-        'May exception date na para sa napiling provider at petsa. / An exception date is already set for that provider and date.'
+        'An exception date is already set for that provider and date.'
       )
     }
     throw new Error(errorMessage(error, GENERIC_ERR))
@@ -1093,6 +1232,7 @@ export interface SlotGenSummary {
   dry_run: boolean
   to_create: number
   already_exist: number
+  stale_unbooked_removed?: number
   exception_days: number
   days_with_availability: number
   interval_minutes: number
@@ -1118,15 +1258,15 @@ async function callGenerateSlots(input: SlotGenInput, dryRun: boolean): Promise<
 function slotGenErrorMessage(error: unknown): string {
   const raw = (error as { message?: string }).message ?? ''
   if (raw.includes('ERR_INVALID_INTERVAL'))
-    return 'Hindi wasto ang interval — dapat 5 hanggang 480 minuto. / Interval must be between 5 and 480 minutes.'
+    return 'Interval must be between 5 and 480 minutes.'
   if (raw.includes('ERR_INVALID_RANGE'))
-    return 'Ang "from" na petsa ay dapat mas maaga o katulad ng "to" na petsa. / The from-date must be on or before the to-date.'
+    return 'The from date must be on or before the to date.'
   if (raw.includes('ERR_RANGE_TOO_LARGE'))
-    return 'Masyadong malaki ang saklaw ng petsa — hindi lalampas sa 180 araw. / The date range cannot exceed 180 days.'
+    return 'The date range cannot exceed 180 days.'
   if (raw.includes('ERR_NOT_FOUND'))
-    return 'Hindi mahanap ang napiling provider o serbisyo. / The selected provider or service was not found.'
+    return 'The selected provider or service was not found.'
   if (raw.includes('ERR_FORBIDDEN'))
-    return 'Administrator lang ang maaaring mag-generate ng slots. / Only an administrator can generate slots.'
+    return 'Only an administrator can generate slots.'
   return errorMessage(error, GENERIC_ERR)
 }
 
@@ -1150,7 +1290,7 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
       queue_tickets ( ticket_number, queue_position, qr_code, status )
     `
     )
-    .not('status', 'eq', 'cancelled')
+    .in('status', ['booked', 'checked_in'])
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -1310,9 +1450,12 @@ export async function fetchCheckinStatus(code: string): Promise<CheckinStatus | 
 // Patient profile page
 // ------------------------------------------------------------
 export interface PatientProfile {
+  id: string
   full_name: string
   email: string | null
   phone: string | null
+  additional_emails: string[]
+  additional_phones: string[]
 }
 
 // Read-only basic profile info. RLS ("own profile: select") already limits a
@@ -1320,13 +1463,205 @@ export interface PatientProfile {
 export async function fetchMyProfile(userId: string): Promise<PatientProfile> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('full_name, email, phone')
+    .select('id, full_name, email, phone, alternate_phone, alternate_email')
     .eq('id', userId)
     .maybeSingle()
 
-  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  if (error) {
+    const raw = error.message ?? ''
+    if (/alternate_(phone|email)|schema cache/i.test(raw)) {
+      const fallback = await supabase
+        .from('profiles')
+        .select('id, full_name, email, phone')
+        .eq('id', userId)
+        .maybeSingle()
+      if (fallback.error) throw new Error(errorMessage(fallback.error, GENERIC_ERR))
+      if (!fallback.data) {
+        throw new Error('Hindi mahanap ang iyong profile. / Your profile could not be found.')
+      }
+      return {
+        ...(fallback.data as Omit<PatientProfile, 'additional_emails' | 'additional_phones'>),
+        additional_emails: [],
+        additional_phones: [],
+      }
+    }
+    throw new Error(errorMessage(error, GENERIC_ERR))
+  }
   if (!data) throw new Error('Hindi mahanap ang iyong profile. / Your profile could not be found.')
-  return data as PatientProfile
+
+  const base = data as {
+    id: string
+    full_name: string
+    email: string | null
+    phone: string | null
+    alternate_phone?: string | null
+    alternate_email?: string | null
+  }
+
+  const contacts = await supabase
+    .from('profile_contacts')
+    .select('contact_type, contact_value, created_at')
+    .eq('profile_id', userId)
+    .order('created_at', { ascending: true })
+
+  let additionalEmails: string[] = []
+  let additionalPhones: string[] = []
+
+  if (contacts.error) {
+    const raw = contacts.error.message ?? ''
+    if (!/profile_contacts|schema cache/i.test(raw)) {
+      throw new Error(errorMessage(contacts.error, GENERIC_ERR))
+    }
+    if (base.alternate_email) additionalEmails = [base.alternate_email]
+    if (base.alternate_phone) additionalPhones = [base.alternate_phone]
+  } else {
+    const rows = (contacts.data ?? []) as {
+      contact_type: 'email' | 'phone'
+      contact_value: string
+    }[]
+    additionalEmails = rows
+      .filter((row) => row.contact_type === 'email')
+      .map((row) => row.contact_value)
+    additionalPhones = rows
+      .filter((row) => row.contact_type === 'phone')
+      .map((row) => row.contact_value)
+  }
+
+  return {
+    id: base.id,
+    full_name: base.full_name,
+    email: base.email,
+    phone: base.phone,
+    additional_emails: additionalEmails,
+    additional_phones: additionalPhones,
+  }
+}
+
+export interface UpdateMyProfileInput {
+  email: string
+  phone: string
+  additionalEmails: string[]
+  additionalPhones: string[]
+}
+
+export interface UpdateMyProfileResult {
+  profile: PatientProfile
+  emailConfirmationRequired: boolean
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function uniqueNormalizedEmails(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)))
+}
+
+function uniqueCanonicalPhones(values: string[]): string[] {
+  const phones: string[] = []
+  for (const value of values) {
+    const trimmed = value.trim()
+    if (!trimmed) continue
+    const canonical = toCanonicalPhilippineMobile(trimmed)
+    if (!canonical) {
+      throw new Error('Enter a valid additional Philippine cellphone number. Example: 9171234567.')
+    }
+    if (!phones.includes(canonical)) phones.push(canonical)
+  }
+  return phones
+}
+
+export async function updateMyProfile(
+  input: UpdateMyProfileInput
+): Promise<UpdateMyProfileResult> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser()
+  const user = userData.user
+  if (userErr || !user) {
+    throw new Error('You need to be logged in to update your profile.')
+  }
+
+  const email = input.email.trim().toLowerCase()
+  if (email && !EMAIL_RE.test(email)) {
+    throw new Error('Please enter a valid email address.')
+  }
+
+  const phone = input.phone.trim()
+  const canonicalPhone = phone ? toCanonicalPhilippineMobile(phone) : null
+  if (phone && !canonicalPhone) {
+    throw new Error('Enter a valid Philippine cellphone number. Example: 9094445123.')
+  }
+
+  const additionalEmails = uniqueNormalizedEmails(input.additionalEmails)
+  for (const additionalEmail of additionalEmails) {
+    if (!EMAIL_RE.test(additionalEmail)) {
+      throw new Error('Please enter a valid additional email address.')
+    }
+  }
+  const primaryEmails = new Set([email, (user.email ?? '').trim().toLowerCase()].filter(Boolean))
+  if (additionalEmails.some((additionalEmail) => primaryEmails.has(additionalEmail))) {
+    throw new Error('Additional email must be different from your primary email.')
+  }
+
+  const additionalPhones = uniqueCanonicalPhones(input.additionalPhones)
+  if (canonicalPhone && additionalPhones.includes(canonicalPhone)) {
+    throw new Error('Additional contact number must be different from your primary number.')
+  }
+
+  let emailConfirmationRequired = false
+  const currentAuthEmail = (user.email ?? '').trim().toLowerCase()
+  const emailChanged = email !== currentAuthEmail
+
+  if (emailChanged) {
+    if (!email) throw new Error('Email is required for login.')
+    const { data: updateData, error: updateErr } = await supabase.auth.updateUser({ email })
+    if (updateErr) throw new Error(errorMessage(updateErr, 'Could not update your email.'))
+
+    const updatedEmail = (updateData.user?.email ?? '').trim().toLowerCase()
+    emailConfirmationRequired = updatedEmail !== email
+  }
+
+  const profilePatch: {
+    phone: string | null
+    email?: string | null
+  } = {
+    phone: canonicalPhone,
+  }
+  if (!emailChanged || !emailConfirmationRequired) profilePatch.email = email || null
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(profilePatch)
+    .eq('id', user.id)
+    .select('id, full_name, email, phone')
+    .maybeSingle()
+
+  if (error) throw new Error(errorMessage(error, 'Could not update your profile.'))
+  if (!data) throw new Error('Your profile could not be updated.')
+
+  const deleteContacts = await supabase.from('profile_contacts').delete().eq('profile_id', user.id)
+  if (deleteContacts.error) {
+    throw new Error(errorMessage(deleteContacts.error, 'Could not update your additional contacts.'))
+  }
+
+  const contactRows = [
+    ...additionalEmails.map((contactValue) => ({
+      profile_id: user.id,
+      contact_type: 'email',
+      contact_value: contactValue,
+    })),
+    ...additionalPhones.map((contactValue) => ({
+      profile_id: user.id,
+      contact_type: 'phone',
+      contact_value: contactValue,
+    })),
+  ]
+
+  if (contactRows.length > 0) {
+    const insertContacts = await supabase.from('profile_contacts').insert(contactRows)
+    if (insertContacts.error) {
+      throw new Error(errorMessage(insertContacts.error, 'Could not save your additional contacts.'))
+    }
+  }
+
+  return { profile: await fetchMyProfile(user.id), emailConfirmationRequired }
 }
 
 // The complete appointment record for the profile page: EVERY status

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AdminEmptyState,
+  AdminPageHeader,
+  AdminStatCard,
+  StatusBadge,
+} from '../../components/AdminPrimitives'
+import {
   fetchProvidersWithAvailability,
   fetchServices,
   fetchTimeOff,
@@ -73,8 +79,11 @@ export function AdminProviders() {
 
   if (loading) {
     return (
-      <section>
-        <h2 className="section-title">Providers &amp; Time Slots</h2>
+      <section className="space-y-4">
+        <AdminPageHeader
+          title="Providers & Slots"
+          subtitle="Set provider availability, manage exception dates, and generate bookable slots."
+        />
         <p className="mt-4 text-slate-400">Loading…</p>
       </section>
     )
@@ -82,12 +91,15 @@ export function AdminProviders() {
 
   return (
     <section className="space-y-10">
-      <div>
-        <h2 className="section-title">Providers &amp; Time Slots</h2>
-        <p className="mt-1 muted">
-          Set each provider's weekly availability, mark exception dates, then generate bookable
-          slots.
-        </p>
+      <AdminPageHeader
+        title="Providers & Slots"
+        subtitle="Set each provider's weekly availability, mark exception dates, then generate bookable slots."
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <AdminStatCard label="Providers" value={providers.length} detail="Configured provider records" />
+        <AdminStatCard label="Schedule Windows" value={providers.reduce((sum, p) => sum + p.provider_availability.length, 0)} detail="Weekly availability windows" tone="sky" />
+        <AdminStatCard label="Exception Dates" value={timeOff.length} detail="Holiday and leave records" tone="amber" />
       </div>
 
       {error && (
@@ -101,9 +113,13 @@ export function AdminProviders() {
         <h3 className="section-kicker">
           Weekly availability
         </h3>
-        {providers.map((p) => (
-          <ProviderCard key={p.id} provider={p} onChanged={loadProviders} />
-        ))}
+        {providers.length === 0 ? (
+          <AdminEmptyState>No providers found.</AdminEmptyState>
+        ) : (
+          providers.map((p) => (
+            <ProviderCard key={p.id} provider={p} onChanged={loadProviders} />
+          ))
+        )}
       </div>
 
       {/* 2. Exception dates */}
@@ -180,16 +196,14 @@ function ProviderCard({
     <div className="card card-pad">
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 break-words font-semibold text-slate-900">{provider.profiles.full_name}</p>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
-          {provider.provider_type}
-        </span>
+        <StatusBadge tone="emerald">{provider.provider_type}</StatusBadge>
         {provider.specialization && (
           <span className="text-xs text-slate-400">· {provider.specialization}</span>
         )}
       </div>
 
       {windows.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-400">No weekly availability set.</p>
+        <AdminEmptyState>No weekly availability set.</AdminEmptyState>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
           {windows.map((w) => (
@@ -257,8 +271,7 @@ function ProviderCard({
 
       {duplicate && (
         <p className="mt-2 text-xs text-amber-600">
-          Nakatakda na ang window para sa araw at oras na ito. / This day and start time already has
-          a window.
+          This day and start time already has a schedule window.
         </p>
       )}
 
@@ -441,7 +454,7 @@ function TimeOffSection({
               <input
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. Araw ng Kalayaan"
+                placeholder="e.g. Clinic holiday"
                 className={`${inputCls} mt-1`}
               />
             </label>
@@ -532,7 +545,7 @@ function TimeOffSection({
 
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
-        {timeOff.length > 0 && (
+        {timeOff.length > 0 ? (
           <ul className="mt-4 divide-y divide-slate-100">
             {timeOff.map((t) => (
               <li key={t.id} className="flex flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -549,6 +562,10 @@ function TimeOffSection({
               </li>
             ))}
           </ul>
+        ) : (
+          <div className="mt-4">
+            <AdminEmptyState>No exception dates set.</AdminEmptyState>
+          </div>
         )}
       </div>
     </div>
@@ -932,11 +949,15 @@ function SummaryCard({
       <p className={`text-sm font-semibold ${success ? 'text-emerald-800' : 'text-gray-700'}`}>
         {title}
       </p>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+      <div className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
         <Stat label={success ? 'Created' : 'To create'} value={summary.to_create} />
-        <Stat label="Already exist" value={summary.already_exist} />
-        <Stat label="Exception days" value={summary.exception_days} />
-        <Stat label="Days w/ availability" value={summary.days_with_availability} />
+        <Stat label="Existing slots" value={summary.already_exist} />
+        <Stat
+          label={success ? 'Stale removed' : 'Stale to replace'}
+          value={summary.stale_unbooked_removed ?? 0}
+        />
+        <Stat label="Exception days (holiday/leave)" value={summary.exception_days} />
+        <Stat label="Days with availability" value={summary.days_with_availability} />
       </div>
       {summary.sample.length > 0 && (
         <div className="mt-3">
@@ -992,13 +1013,13 @@ function GenerateResultModal({
 
   let headline: string
   if (noAvailability) {
-    headline = `Walang weekly availability si ${providerName} sa hanay na ito.`
+    headline = `${providerName} has no weekly availability in this range.`
   } else if (allExisted) {
-    headline = 'Walang bagong slot — nakagenerate na ang lahat sa hanay na ito.'
+    headline = 'No new slots — all slots in this range were already generated.'
   } else if (nothingNew) {
-    headline = 'Walang na-generate na slot sa hanay na ito.'
+    headline = 'No slots generated in this range.'
   } else {
-    headline = `${summary.to_create} bagong slot ang na-generate.`
+    headline = `${summary.to_create} new slots generated.`
   }
 
   return (
@@ -1027,39 +1048,40 @@ function GenerateResultModal({
 
         {noAvailability ? (
           <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Walang availability window ang provider na ito sa alinmang araw ng linggo sa loob ng
-            hanay na ito. Ayusin muna ang <span className="font-medium">Weekly availability</span>{' '}
-            sa itaas — nasa provider availability ang solusyon, hindi sa generator.
+            This provider has no availability windows on any weekday in this range. Update{' '}
+            <span className="font-medium">Weekly availability</span> above first — the fix belongs
+            in provider availability, not the generator.
             {summary.exception_days > 0 &&
               ` (${summary.exception_days} exception day${
                 summary.exception_days === 1 ? '' : 's'
-              } din ang nilaktawan sa hanay na ito.)`}
+              } skipped in this range.)`}
           </p>
         ) : (
           <>
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <ModalStat label="Na-generate" value={summary.to_create} />
-              <ModalStat label="Dati nang meron (nilaktawan)" value={summary.already_exist} />
-              <ModalStat label="Araw na may availability" value={summary.days_with_availability} />
+              <ModalStat label="Generated" value={summary.to_create} />
+              <ModalStat label="Existing slots (skipped)" value={summary.already_exist} />
+              <ModalStat label="Stale unbooked removed" value={summary.stale_unbooked_removed ?? 0} />
+              <ModalStat label="Days with availability" value={summary.days_with_availability} />
               <ModalStat label="Exception days (holiday/leave)" value={summary.exception_days} />
             </div>
 
             {allExisted && (
               <p className="mt-3 text-sm text-gray-600">
-                Idempotent ang generator kaya normal ito — hindi error. Kumpleto na ang mga slot sa
-                hanay na ito.
+                The generator is idempotent, so this is expected and not an error. Slots are already
+                complete for this range.
               </p>
             )}
             {nothingNew && !allExisted && (
               <p className="mt-3 text-sm text-amber-700">
-                May availability windows pero walang naisulat na slot — baka mas mahaba ang interval
-                kaysa sa haba ng window. Suriin ang interval at ang oras ng availability.
+                Availability windows exist, but no slots were created. The interval may be longer
+                than the window length. Check the interval and availability times.
               </p>
             )}
             {summary.sample.length > 0 && (
               <div className="mt-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Unang mga slot
+                  FIRST SLOTS
                 </p>
                 <p className="mt-1 text-xs text-gray-600">
                   {summary.sample.map(formatSlotSample).join(' · ')}
@@ -1073,7 +1095,7 @@ function GenerateResultModal({
           onClick={onDismiss}
           className="mt-5 w-full rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
         >
-          Isara
+          Close
         </button>
       </div>
     </div>

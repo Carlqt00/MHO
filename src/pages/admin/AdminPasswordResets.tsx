@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AdminEmptyState,
+  AdminPageHeader,
+  AdminStatCard,
+  StatusBadge,
+} from '../../components/AdminPrimitives'
+import {
   fetchPasswordResetRequests,
   type PasswordResetRequest,
 } from '../../lib/api'
@@ -13,13 +19,13 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrator',
 }
 
-const STATUS_BADGE: Record<PasswordResetRequest['status'], string> = {
-  pending: 'bg-amber-100 text-amber-800',
-  completed: 'bg-emerald-100 text-emerald-800',
-  rejected: 'bg-slate-100 text-slate-600',
-  approved: 'bg-blue-100 text-blue-800',
-  expired: 'bg-orange-100 text-orange-700',
-  failed: 'bg-red-100 text-red-700',
+const STATUS_TONE: Record<PasswordResetRequest['status'], 'amber' | 'emerald' | 'slate' | 'sky' | 'orange' | 'red'> = {
+  pending: 'amber',
+  completed: 'emerald',
+  rejected: 'slate',
+  approved: 'sky',
+  expired: 'orange',
+  failed: 'red',
 }
 
 function formatDateTime(iso: string) {
@@ -64,23 +70,25 @@ export function AdminPasswordResets() {
   )
 
   return (
-    <section>
-      <div>
-        <h2 className="section-title">Password Reset Requests</h2>
-        <p className="mt-1 muted">Monitor automatic password reset requests.</p>
-      </div>
+    <section className="space-y-6">
+      <AdminPageHeader
+        title="Password Resets"
+        subtitle="Monitor automatic SMS-based password reset requests and completion history."
+      />
 
-      <div className="mt-4 rounded-2xl border border-emerald-100 bg-white/80 px-4 py-3 text-sm text-slate-700">
-        Active requests: <span className="font-semibold text-slate-950">{activeCount}</span>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <AdminStatCard label="Active Requests" value={activeCount} detail="Pending or approved" tone="amber" />
+        <AdminStatCard label="Completed" value={requests.filter((r) => r.status === 'completed').length} detail="Finished resets" />
+        <AdminStatCard label="Failed / Expired" value={requests.filter((r) => r.status === 'failed' || r.status === 'expired').length} detail="Needs review" tone="red" />
       </div>
 
       {error && (
-        <div className="alert-error mt-4" role="alert">
+        <div className="alert-error" role="alert">
           {error}
         </div>
       )}
 
-      <div className="table-shell mt-4">
+      <div className="table-shell">
         <table className="data-table mobile-card-table md:min-w-[52rem]">
           <thead>
             <tr>
@@ -102,7 +110,7 @@ export function AdminPasswordResets() {
             ) : requests.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                  No password reset requests yet.
+                  <AdminEmptyState>No password reset requests yet.</AdminEmptyState>
                 </td>
               </tr>
             ) : (
@@ -125,11 +133,7 @@ function PasswordResetRow({ request }: { request: PasswordResetRequest }) {
       <td data-label="Role" className="text-slate-600">{ROLE_LABEL[request.profiles.role]}</td>
       <td data-label="Requested" className="text-slate-500">{formatDateTime(request.requested_at)}</td>
       <td data-label="Status">
-        <span
-          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[request.status]}`}
-        >
-          {statusLabel}
-        </span>
+        <StatusBadge tone={STATUS_TONE[request.status]}>{statusLabel}</StatusBadge>
       </td>
       <td data-label="Completed" className="text-slate-500">
         {request.completed_at ? formatDateTime(request.completed_at) : '—'}

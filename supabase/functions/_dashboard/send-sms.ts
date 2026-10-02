@@ -43,7 +43,7 @@ export const DEFAULT_ITEXTMO_ENDPOINT = 'https://api.itextmo.com/v1/messages'
 // notification never burns more than ~3 segments of a metered SIM plan.
 export const MAX_SMS_LENGTH = 480
 
-export const SMS_SENDER_PREFIX = 'MHO Malilipot'
+export const SMS_SENDER_PREFIX = 'MHO Daraga'
 
 export class HttpError extends Error {
   status: number
@@ -287,12 +287,13 @@ const APPOINTMENT_EVENTS = [
   'appointment_checked_in',
   'appointment_served',
   'appointment_no_show',
+  'appointment_auto_cancelled_missed_checkin',
   'queue_now_serving',
 ] as const
 type SmsEvent = (typeof APPOINTMENT_EVENTS)[number]
 
 // Which appointment status each event is valid for. Prevents e.g. texting
-// "your appointment is booked" for a cancelled row.
+// "your appointment has been created" for a cancelled row.
 const EXPECTED_STATUS: Record<SmsEvent, string[]> = {
   appointment_booked: ['booked'],
   appointment_cancelled: ['cancelled'],
@@ -300,6 +301,7 @@ const EXPECTED_STATUS: Record<SmsEvent, string[]> = {
   appointment_checked_in: ['checked_in'],
   appointment_served: ['served'],
   appointment_no_show: ['no_show'],
+  appointment_auto_cancelled_missed_checkin: ['cancelled'],
   queue_now_serving: ['booked', 'checked_in'],
 }
 
@@ -371,12 +373,16 @@ function messageFor(event: SmsEvent, appointment: AppointmentDetails): string {
   switch (event) {
     case 'appointment_booked':
       return whenText
-        ? `${p}: Your ${service} appointment is booked for ${whenText}${ticket ? ` (Ticket ${ticket})` : ''}. Please arrive 15 minutes early.`
-        : `${p}: Your ${service} appointment has been booked successfully.`
+        ? `${p}: Your ${service} appointment has been created for ${whenText}${ticket ? ` (Ticket ${ticket})` : ''}. Please arrive 15 minutes early.`
+        : `${p}: Your ${service} appointment has been created successfully.`
     case 'appointment_cancelled':
       return whenText
         ? `${p}: Your ${service} appointment for ${whenText} has been cancelled.`
         : `${p}: Your ${service} appointment has been cancelled.`
+    case 'appointment_auto_cancelled_missed_checkin':
+      return whenText
+        ? `${p}: Your ${service} appointment scheduled for ${whenText} was automatically cancelled because you did not check in within 15 minutes of your appointment time.`
+        : `${p}: Your ${service} appointment was automatically cancelled because you did not check in within 15 minutes of your appointment time.`
     case 'appointment_rescheduled':
       return whenText
         ? `${p}: Your ${service} appointment has been moved to ${whenText}${provider ? ` with ${provider}` : ''}${ticket ? ` (Ticket ${ticket})` : ''}. Please arrive 15 minutes early.`

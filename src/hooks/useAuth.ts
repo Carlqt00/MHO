@@ -9,7 +9,11 @@ export interface AuthContextValue {
     fullName: string
     email: string
     phone: string
+    barangay: string
+    purok: string
     password: string
+    privacyConsentAccepted: boolean
+    privacyNoticeVersion: string
   }) => Promise<Session>
   refreshSession: () => Promise<Session | null>
   logout: () => Promise<void>

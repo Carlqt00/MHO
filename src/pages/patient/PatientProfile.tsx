@@ -6,9 +6,12 @@ import { useAuth } from '../../hooks/useAuth'
 import {
   fetchMyProfile,
   fetchMyAppointmentHistory,
+  updateMyProfile,
   type PatientProfile as PatientProfileData,
   type Appointment,
 } from '../../lib/api'
+import { updateOwnPassword, verifyOwnPassword } from '../../lib/auth'
+import { normalizePhilippineMobileSubscriber, toCanonicalPhilippineMobile } from '../../lib/phone'
 
 function formatSlot(iso: string) {
   return new Date(iso).toLocaleString('en-PH', {
@@ -33,7 +36,8 @@ function formatDate(iso: string) {
 const STATUS_LABEL: Record<string, string> = {
   booked: 'Booked',
   checked_in: 'Naka-check in',
-  served: 'Tapos na',
+  served: 'Done',
+  completed: 'Done',
   cancelled: 'Cancelled',
   no_show: 'Hindi dumating',
 }
@@ -42,6 +46,7 @@ const STATUS_COLOR: Record<string, string> = {
   booked: 'bg-emerald-100 text-emerald-800',
   checked_in: 'bg-blue-100 text-blue-800',
   served: 'bg-gray-100 text-gray-600',
+  completed: 'bg-gray-100 text-gray-600',
   cancelled: 'bg-red-100 text-red-600',
   no_show: 'bg-orange-100 text-orange-700',
 }
@@ -50,22 +55,47 @@ const STATUS_COLOR: Record<string, string> = {
 // once the patient has arrived). History = finished business only. These two
 // sets are disjoint and cover every status, so nothing overlaps or disappears.
 const CURRENT_STATUSES = new Set(['booked', 'checked_in'])
-const HISTORY_STATUSES = new Set(['served', 'no_show', 'cancelled'])
+const HISTORY_STATUSES = new Set(['served', 'completed', 'no_show', 'cancelled'])
+
+function profilePhoneSubscriber(profile: PatientProfileData | null): string {
+  return profile?.phone ? normalizePhilippineMobileSubscriber(profile.phone) : ''
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MIN_PASSWORD_LENGTH = 8
 
 export function PatientProfile() {
-  const { session } = useAuth()
+  const { session, refreshSession } = useAuth()
   const userId = session?.userId
 
   const [profile, setProfile] = useState<PatientProfileData | null>(null)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [editMode, setEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editEmail, setEditEmail] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [additionalEmails, setAdditionalEmails] = useState<string[]>([])
+  const [additionalPhones, setAdditionalPhones] = useState<string[]>([])
+  const [newAdditionalEmail, setNewAdditionalEmail] = useState('')
+  const [newAdditionalPhone, setNewAdditionalPhone] = useState('')
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
     if (!userId) return
     Promise.all([fetchMyProfile(userId), fetchMyAppointmentHistory()])
       .then(([p, appts]) => {
         setProfile(p)
+        setEditEmail(p.email ?? '')
+        setEditPhone(profilePhoneSubscriber(p))
+        setAdditionalEmails(p.additional_emails)
+        setAdditionalPhones(p.additional_phones)
         setAppointments(appts)
         setLoading(false)
       })
@@ -74,6 +104,140 @@ export function PatientProfile() {
         setLoading(false)
       })
   }, [userId])
+
+  const startEdit = () => {
+    setEditError('')
+    setNotice('')
+    setEditEmail(profile?.email ?? '')
+    setEditPhone(profilePhoneSubscriber(profile))
+    setAdditionalEmails(profile?.additional_emails ?? [])
+    setAdditionalPhones(profile?.additional_phones ?? [])
+    setNewAdditionalEmail('')
+    setNewAdditionalPhone('')
+    setChangePasswordOpen(false)
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setEditMode(true)
+  }
+
+  const cancelEdit = () => {
+    setEditError('')
+    setEditEmail(profile?.email ?? '')
+    setEditPhone(profilePhoneSubscriber(profile))
+    setAdditionalEmails(profile?.additional_emails ?? [])
+    setAdditionalPhones(profile?.additional_phones ?? [])
+    setNewAdditionalEmail('')
+    setNewAdditionalPhone('')
+    setChangePasswordOpen(false)
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setEditMode(false)
+  }
+
+  const addAdditionalEmail = () => {
+    const normalized = newAdditionalEmail.trim().toLowerCase()
+    setEditError('')
+    if (!normalized) return
+    if (!EMAIL_RE.test(normalized)) {
+      setEditError('Please enter a valid additional email address.')
+      return
+    }
+    if (normalized === editEmail.trim().toLowerCase()) {
+      setEditError('Additional email must be different from your primary email.')
+      return
+    }
+    if (!additionalEmails.includes(normalized)) {
+      setAdditionalEmails((emails) => [...emails, normalized])
+    }
+    setNewAdditionalEmail('')
+  }
+
+  const addAdditionalPhone = () => {
+    const canonical = toCanonicalPhilippineMobile(newAdditionalPhone)
+    setEditError('')
+    if (!newAdditionalPhone.trim()) return
+    if (!canonical) {
+      setEditError('Enter a valid additional Philippine cellphone number. Example: 9171234567.')
+      return
+    }
+    const primaryPhone = toCanonicalPhilippineMobile(editPhone)
+    if (primaryPhone && canonical === primaryPhone) {
+      setEditError('Additional contact number must be different from your primary number.')
+      return
+    }
+    if (!additionalPhones.includes(canonical)) {
+      setAdditionalPhones((phones) => [...phones, canonical])
+    }
+    setNewAdditionalPhone('')
+  }
+
+  const validatePasswordChange = () => {
+    if (!changePasswordOpen) return ''
+    if (!currentPassword) return 'Current password is required.'
+    if (!newPassword) return 'New password is required.'
+    if (!confirmPassword) return 'Confirm new password is required.'
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      return 'New password must be at least 8 characters.'
+    }
+    if (newPassword !== confirmPassword) return 'New passwords do not match.'
+    if (newPassword === currentPassword) {
+      return 'New password must be different from your current password.'
+    }
+    return ''
+  }
+
+  const saveProfile = async () => {
+    setSaving(true)
+    setEditError('')
+    setNotice('')
+    try {
+      const passwordError = validatePasswordChange()
+      if (passwordError) {
+        setEditError(passwordError)
+        return
+      }
+      if (changePasswordOpen) {
+        await verifyOwnPassword(currentPassword)
+      }
+
+      const result = await updateMyProfile({
+        email: editEmail,
+        phone: editPhone,
+        additionalEmails,
+        additionalPhones,
+      })
+      if (changePasswordOpen) {
+        await updateOwnPassword(newPassword)
+      }
+      const savedProfile = userId ? await fetchMyProfile(userId) : result.profile
+      setProfile(savedProfile)
+      setEditEmail(savedProfile.email ?? '')
+      setEditPhone(profilePhoneSubscriber(savedProfile))
+      setAdditionalEmails(savedProfile.additional_emails)
+      setAdditionalPhones(savedProfile.additional_phones)
+      setNewAdditionalEmail('')
+      setNewAdditionalPhone('')
+      setChangePasswordOpen(false)
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      await refreshSession()
+      setEditMode(false)
+      setNotice(
+        changePasswordOpen
+          ? 'Profile and password updated successfully.'
+          : result.emailConfirmationRequired
+          ? 'Profile updated. Please confirm the email change from your inbox before using the new email to log in.'
+          : 'Profile updated successfully.'
+      )
+    } catch (e) {
+      setEditError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const { current, history } = useMemo(() => {
     const current = appointments
@@ -107,29 +271,293 @@ export function PatientProfile() {
         <div className="alert-error mb-4">{error}</div>
       )}
 
+      {notice && (
+        <div className="alert-success mb-4" role="status">{notice}</div>
+      )}
+
       {loading ? (
         <p className="text-slate-400">Loading…</p>
       ) : (
         <div className="space-y-8">
-          {/* 1. Basic profile info (read-only) */}
+          {/* 1. Basic profile info */}
           <section className="card card-pad">
-            <div className="mb-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="section-title">Basic Info</h2>
+              {!editMode && (
+                <button type="button" onClick={startEdit} className="btn-secondary w-full sm:w-auto">
+                  Edit
+                </button>
+              )}
             </div>
-            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</dt>
-                <dd className="mt-1 text-slate-800">{profile?.full_name || '—'}</dd>
+            {editMode ? (
+              <div className="space-y-3">
+                {editError && <div className="alert-error">{editError}</div>}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-x-5">
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</p>
+                    <p className="mt-1 break-words text-slate-800">{profile?.full_name || '—'}</p>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="block">
+                      <span className="label">Email</span>
+                      <input
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                        placeholder="name@example.com"
+                        disabled={saving}
+                      />
+                    </label>
+                    <div>
+                      <span className="label">Additional Email</span>
+                      <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row">
+                        <input
+                          type="email"
+                          value={newAdditionalEmail}
+                          onChange={(e) => setNewAdditionalEmail(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addAdditionalEmail()
+                            }
+                          }}
+                          className="h-11 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                          placeholder="Enter additional email"
+                          disabled={saving}
+                        />
+                        <button
+                          type="button"
+                          onClick={addAdditionalEmail}
+                          disabled={saving}
+                          className="btn-secondary h-11 w-full shrink-0 sm:w-24"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {additionalEmails.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                            Added Emails
+                          </p>
+                          {additionalEmails.map((email) => (
+                            <div
+                              key={email}
+                              className="flex min-h-9 min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5"
+                            >
+                              <span className="min-w-0 break-all text-sm text-slate-700">{email}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAdditionalEmails((emails) =>
+                                    emails.filter((savedEmail) => savedEmail !== email)
+                                  )
+                                }
+                                disabled={saving}
+                                className="h-7 shrink-0 rounded-md px-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="block">
+                      <span className="label">Cellphone Number</span>
+                      <div className="mt-1 flex h-11 min-w-0 overflow-hidden rounded-lg border border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus:ring-emerald-100">
+                        <span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-500">
+                          +63
+                        </span>
+                        <input
+                          inputMode="numeric"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(normalizePhilippineMobileSubscriber(e.target.value))}
+                          className="min-w-0 flex-1 px-3 text-slate-900 outline-none"
+                          placeholder="9094445123"
+                          disabled={saving}
+                        />
+                      </div>
+                    </label>
+                    <div>
+                      <span className="label">Additional Contact Number</span>
+                      <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row">
+                        <div className="flex h-11 min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-100">
+                          <span className="flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-500">
+                            +63
+                          </span>
+                          <input
+                            inputMode="numeric"
+                            value={newAdditionalPhone}
+                            onChange={(e) => setNewAdditionalPhone(normalizePhilippineMobileSubscriber(e.target.value))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                addAdditionalPhone()
+                              }
+                            }}
+                            className="min-w-0 flex-1 px-3 text-slate-900 outline-none"
+                            placeholder="9672345672"
+                            disabled={saving}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addAdditionalPhone}
+                          disabled={saving}
+                          className="btn-secondary h-11 w-full shrink-0 sm:w-24"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {additionalPhones.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                            Added Numbers
+                          </p>
+                          {additionalPhones.map((phone) => (
+                            <div
+                              key={phone}
+                              className="flex min-h-9 min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5"
+                            >
+                              <span className="min-w-0 break-all text-sm text-slate-700">{phone}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAdditionalPhones((phones) =>
+                                    phones.filter((savedPhone) => savedPhone !== phone)
+                                  )
+                                }
+                                disabled={saving}
+                                className="h-7 shrink-0 rounded-md px-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t border-slate-200 pt-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-sm font-semibold text-slate-700">Security</h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChangePasswordOpen((open) => !open)
+                        setCurrentPassword('')
+                        setNewPassword('')
+                        setConfirmPassword('')
+                        setEditError('')
+                      }}
+                      disabled={saving}
+                      className="btn-secondary min-h-10 w-full px-4 py-2 sm:w-auto"
+                      aria-expanded={changePasswordOpen}
+                    >
+                      Change Password
+                    </button>
+                  </div>
+
+                  {changePasswordOpen && (
+                    <div className="mt-3 grid grid-cols-1 gap-4 rounded-lg border border-slate-100 bg-slate-50/60 p-3 lg:grid-cols-3">
+                      <label className="block">
+                        <span className="label">Current Password</span>
+                        <input
+                          type="password"
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                          disabled={saving}
+                          autoComplete="current-password"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="label">New Password</span>
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                          disabled={saving}
+                          minLength={MIN_PASSWORD_LENGTH}
+                          autoComplete="new-password"
+                        />
+                        <p className="mt-1 text-sm text-slate-500">
+                          At least {MIN_PASSWORD_LENGTH} characters.
+                        </p>
+                      </label>
+                      <label className="block">
+                        <span className="label">Confirm New Password</span>
+                        <input
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                          disabled={saving}
+                          minLength={MIN_PASSWORD_LENGTH}
+                          autoComplete="new-password"
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    disabled={saving}
+                    className="btn-secondary w-full sm:w-auto"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveProfile}
+                    disabled={saving}
+                    className="btn-primary w-full sm:w-auto"
+                  >
+                    {saving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </div>
               </div>
-              <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Email</dt>
-                <dd className="mt-1 break-all text-slate-800">{profile?.email || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Phone</dt>
-                <dd className="mt-1 text-slate-800">{profile?.phone || '—'}</dd>
-              </div>
-            </dl>
+            ) : (
+              <dl className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="space-y-1">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</dt>
+                  <dd className="text-slate-800">{profile?.full_name || '—'}</dd>
+                </div>
+                <div className="space-y-1">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Email</dt>
+                  <dd className="break-all text-slate-800">
+                    {profile?.email ? (
+                      <a href={`mailto:${profile.email}`} className="hover:text-emerald-800">
+                        {profile.email}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </dd>
+                  {profile?.additional_emails.map((email) => (
+                    <dd key={email} className="break-all text-slate-700">
+                      {email}
+                    </dd>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Cellphone Number</dt>
+                  <dd className="text-slate-800">{profile?.phone || '—'}</dd>
+                  {profile?.additional_phones.map((phone) => (
+                    <dd key={phone} className="text-slate-700">
+                      {phone}
+                    </dd>
+                  ))}
+                </div>
+              </dl>
+            )}
           </section>
 
           {/* 2. Current booking(s) with queue number + QR check-in code */}

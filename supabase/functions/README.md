@@ -104,7 +104,8 @@ clinic SIM that drains an API queue at ~1 msg/sec. Every send is recorded in
 | Function | Auth | Purpose |
 |---|---|---|
 | `_shared/sms.ts` | — | `sendSms()` — writes the log row, calls `POST /v1/messages`, stores the gateway message id, flips the row to `sent`/`failed`. Used by every function below. |
-| `send-sms` | user JWT | Appointment lifecycle texts (`appointment_booked`, `appointment_cancelled`, `appointment_rescheduled`, `appointment_checked_in`, `appointment_served`, `appointment_no_show`, `queue_now_serving`) — message text is composed server-side from the appointment row. Patients may trigger booked/cancelled/rescheduled for their own appointment; nurse/staff/admin may trigger all. Also the admin free-text send (`{recipient, message}`). |
+| `send-sms` | user JWT | Appointment lifecycle texts (`appointment_booked`, `appointment_cancelled`, `appointment_rescheduled`, `appointment_checked_in`, `appointment_served`, `appointment_no_show`, `appointment_auto_cancelled_missed_checkin`, `queue_now_serving`) — message text is composed server-side from the appointment row. Patients may trigger booked/cancelled/rescheduled for their own appointment; nurse/staff/admin may trigger all. Also the admin free-text send (`{recipient, message}`). |
+| `auto-cancel-missed-appointments` | scheduled secret | Runs `auto_cancel_missed_appointments`, cancelling booked appointments once `appointment_at + 15 minutes <= now()` and sending one deduped missed-check-in SMS through `_shared/sms.ts`. Deploy with `--no-verify-jwt`, set `AUTO_CANCEL_CRON_SECRET`, and schedule it every 5 minutes in Supabase Scheduled Functions. |
 | `send-announcement-sms` | admin JWT | Broadcast one **published** announcement to every patient with a `+639…` number. Explicit admin action with a recipient count. Resumable: patients already `sent`/`delivered` for that announcement are skipped. |
 | `password-reset-request` | public | Verifies name + email + phone, then texts a 6-digit code (15 min TTL, 60 s resend cooldown). The code is never returned to the browser. |
 | `password-reset-complete` | public | `{requestId, code, newPassword}` — 5 wrong codes void the request. |
@@ -117,6 +118,7 @@ clinic SIM that drains an API queue at ~1 msg/sec. Every send is recorded in
 | `ITEXTMO_API_KEY` | yes | The `sk_live_…` key — on the handset under Settings → Authentication → Password (the "Username"/device id is NOT needed; auth is `Authorization: Bearer <key>`). Rotate rather than re-pair. |
 | `ITEXTMO_ENDPOINT` | **yes for us** | Defaults to `https://api.itextmo.com/v1/messages`, but our handset is paired to a per-device backend: `https://itextmo-backend-dev.vercel.app/api/v1/messages` (note the `/api/v1` prefix; the phone's Settings screen shows only the host, and the non-`-dev` host 307-redirects here). Same contract: Bearer key, `Idempotency-Key` required, unknown body fields rejected. |
 | `ITEXTMO_WEBHOOK_SECRET` | strongly recommended | Returned when the webhook URL is saved. Without it the webhook accepts unsigned receipts (logged as a warning). |
+| `AUTO_CANCEL_CRON_SECRET` | recommended | Shared secret for the scheduled auto-cancel function. Send it as `Authorization: Bearer <secret>` or `x-cron-secret` from the scheduler. |
 
 ```bash
 supabase secrets set ITEXTMO_API_KEY=sk_live_… ITEXTMO_ENDPOINT=https://itextmo-backend-dev.vercel.app/api/v1/messages
@@ -139,6 +141,7 @@ shows a "…but the SMS notification could not be sent" warning.
 
 ```bash
 supabase functions deploy send-sms
+supabase functions deploy auto-cancel-missed-appointments --no-verify-jwt
 supabase functions deploy send-announcement-sms
 supabase functions deploy password-reset-request --no-verify-jwt   # public
 supabase functions deploy password-reset-complete --no-verify-jwt  # public
