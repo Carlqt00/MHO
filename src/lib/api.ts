@@ -579,6 +579,21 @@ export interface QueueTicket {
   }
 }
 
+export interface ScannedQueueTicket {
+  id: string
+  ticket_number: string
+  queue_position: number
+  status: 'waiting' | 'now_serving' | 'done'
+  appointments: {
+    id: string
+    status: string
+    appointment_at: string
+    services: { name: string }
+    patients: { profiles: { full_name: string } }
+    providers: { profiles: { full_name: string } }
+  }
+}
+
 export interface UpcomingAppointment {
   id: string
   status: string
@@ -607,6 +622,14 @@ function manilaDayWindow(): { today: string; start: string; end: string; tomorro
   }
 }
 
+export function manilaDateKey(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+}
+
+export function todayManilaDateKey(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+}
+
 export async function fetchTodayQueue(): Promise<QueueTicket[]> {
   const { start, end } = manilaDayWindow()
   const { data, error } = await supabase
@@ -631,6 +654,63 @@ export async function fetchTodayQueue(): Promise<QueueTicket[]> {
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
   return data as unknown as QueueTicket[]
+}
+
+export async function fetchQueueTicketByQrToken(token: string): Promise<ScannedQueueTicket | null> {
+  const { data, error } = await supabase
+    .from('queue_tickets')
+    .select(
+      `
+      id, ticket_number, queue_position, status,
+      appointments!inner (
+        id, status, appointment_at,
+        services ( name ),
+        patients ( profiles ( full_name ) ),
+        providers ( profiles ( full_name ) )
+      )
+    `
+    )
+    .eq('qr_code', token)
+    .maybeSingle()
+
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  if (!data) return null
+
+  const first = <T>(value: T | T[] | null | undefined): T | null =>
+    Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
+
+  const row = data as unknown as Omit<ScannedQueueTicket, 'appointments'> & {
+    appointments:
+      | (Omit<ScannedQueueTicket['appointments'], 'services' | 'patients' | 'providers'> & {
+          services: ScannedQueueTicket['appointments']['services'] | ScannedQueueTicket['appointments']['services'][]
+          patients: ScannedQueueTicket['appointments']['patients'] | ScannedQueueTicket['appointments']['patients'][]
+          providers: ScannedQueueTicket['appointments']['providers'] | ScannedQueueTicket['appointments']['providers'][]
+        })
+      | Array<
+          Omit<ScannedQueueTicket['appointments'], 'services' | 'patients' | 'providers'> & {
+            services: ScannedQueueTicket['appointments']['services'] | ScannedQueueTicket['appointments']['services'][]
+            patients: ScannedQueueTicket['appointments']['patients'] | ScannedQueueTicket['appointments']['patients'][]
+            providers: ScannedQueueTicket['appointments']['providers'] | ScannedQueueTicket['appointments']['providers'][]
+          }
+        >
+  }
+  const appointment = first(row.appointments)
+  if (!appointment) return null
+
+  return {
+    id: row.id,
+    ticket_number: row.ticket_number,
+    queue_position: row.queue_position,
+    status: row.status,
+    appointments: {
+      id: appointment.id,
+      status: appointment.status,
+      appointment_at: appointment.appointment_at,
+      services: first(appointment.services) ?? { name: '' },
+      patients: first(appointment.patients) ?? { profiles: { full_name: '' } },
+      providers: first(appointment.providers) ?? { profiles: { full_name: '' } },
+    },
+  }
 }
 
 export async function fetchUpcomingAppointments(): Promise<UpcomingAppointment[]> {

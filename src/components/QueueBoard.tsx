@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { AdminEmptyState, AdminPageHeader, AdminStatCard, StatusBadge } from './AdminPrimitives'
+import { QrCheckinScanner } from './QrCheckinScanner'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import {
   fetchTodayQueue,
   fetchUpcomingAppointments,
@@ -85,6 +87,7 @@ function groupUpcomingByDate(appointments: UpcomingAppointment[]) {
 }
 
 export function QueueBoard() {
+  const { session } = useAuth()
   const [tickets, setTickets] = useState<QueueTicket[]>([])
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,6 +98,7 @@ export function QueueBoard() {
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'success' | 'warn'>('success')
   const [tick, setTick] = useState(0)
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   useEffect(() => {
     Promise.all([fetchTodayQueue(), fetchUpcomingAppointments()])
@@ -187,6 +191,7 @@ export function QueueBoard() {
   const nowServingCount = tickets.filter((t) => t.status === 'now_serving').length
   const checkedInCount = tickets.filter((t) => t.appointments.status === 'checked_in').length
   const upcomingGroups = groupUpcomingByDate(upcomingAppointments)
+  const canScanQr = session?.role === 'nurse' || session?.role === 'staff' || session?.role === 'admin'
 
   return (
     <div className="space-y-5">
@@ -194,17 +199,24 @@ export function QueueBoard() {
         title="Live Queue"
         subtitle="Monitor today’s queue by provider and call the next waiting ticket."
         actions={
-        <span
-          className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-            live ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
-          }`}
-        >
-          <span
-            className={`h-2 w-2 rounded-full ${live ? 'bg-emerald-500' : 'bg-gray-400'}`}
-            aria-hidden="true"
-          />
-          {live ? 'Live' : 'Connecting…'}
-        </span>
+          <>
+            {canScanQr && (
+              <button className="btn-primary" onClick={() => setScannerOpen(true)}>
+                Scan Patient QR
+              </button>
+            )}
+            <span
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                live ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${live ? 'bg-emerald-500' : 'bg-gray-400'}`}
+                aria-hidden="true"
+              />
+              {live ? 'Live' : 'Connecting…'}
+            </span>
+          </>
         }
       />
 
@@ -392,6 +404,16 @@ export function QueueBoard() {
           </div>
         )}
       </section>
+
+      {scannerOpen && (
+        <QrCheckinScanner
+          onClose={() => setScannerOpen(false)}
+          onCheckedIn={() => {
+            showNotice('success', 'Patient checked in from QR scan.')
+            setTick((n) => n + 1)
+          }}
+        />
+      )}
     </div>
   )
 }
