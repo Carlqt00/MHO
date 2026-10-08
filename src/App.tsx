@@ -8,6 +8,7 @@ import { ForgotPassword } from './pages/ForgotPassword'
 import { ResetPassword } from './pages/ResetPassword'
 import { ChangePassword } from './pages/ChangePassword'
 import { Checkin } from './pages/Checkin'
+import { RescheduleResponse } from './pages/RescheduleResponse'
 import { PatientDashboard } from './pages/dashboards/PatientDashboard'
 import { BookAppointment } from './pages/patient/BookAppointment'
 import { PatientProfile } from './pages/patient/PatientProfile'
@@ -36,6 +37,7 @@ function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           {/* Public, no-login QR check-in status page */}
           <Route path="/checkin/:code" element={<Checkin />} />
+          <Route path="/reschedule-response/:token" element={<RescheduleResponse />} />
           <Route
             path="/change-password"
             element={

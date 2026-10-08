@@ -18,6 +18,10 @@ import {
   fetchExceptionConflicts,
   cancelAppointment,
   fetchOpenSlots,
+  fetchOpenSlotsForProvider,
+  fetchAdminRescheduleProposals,
+  sendEmergencyRescheduleProposals,
+  resendEmergencyRescheduleProposal,
   rescheduleAppointment,
   type OpenSlot,
   type ProviderWithAvailability,
@@ -25,6 +29,7 @@ import {
   type TimeOff,
   type SlotGenSummary,
   type ExceptionConflict,
+  type AdminRescheduleProposal,
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
 
@@ -125,7 +130,10 @@ export function AdminProviders() {
       {/* 2. Exception dates */}
       <TimeOffSection providers={providers} timeOff={timeOff} onChanged={loadTimeOff} />
 
-      {/* 3. Slot generator */}
+      {/* 3. Emergency reschedule proposals */}
+      <EmergencyRescheduleSection providers={providers} />
+
+      {/* 4. Slot generator */}
       <SlotGenerator providers={providers} services={services} />
     </section>
   )
@@ -741,6 +749,403 @@ function ReschedulePicker({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvailability[] }) {
+  const [providerId, setProviderId] = useState('')
+  const [date, setDate] = useState(todayManila())
+  const [reason, setReason] = useState('Provider emergency')
+  const [affected, setAffected] = useState<ExceptionConflict[]>([])
+  const [assignments, setAssignments] = useState<Record<string, OpenSlot>>({})
+  const [proposals, setProposals] = useState<AdminRescheduleProposal[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [review, setReview] = useState(false)
+
+  const loadMonitor = useCallback(async () => {
+    if (!providerId || !date) {
+      setProposals([])
+      return
+    }
+    setProposals(await fetchAdminRescheduleProposals({ providerId, date }))
+  }, [providerId, date])
+
+  const loadAffected = async () => {
+    if (!providerId) {
+      setError('Select a provider first.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    setNotice('')
+    setReview(false)
+    setAssignments({})
+    try {
+      const rows = await fetchExceptionConflicts(providerId, date)
+      setAffected(rows.filter((row) => row.status === 'booked'))
+      await loadMonitor()
+    } catch (e) {
+      setError(errorMessage(e, 'Could not load affected appointments.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const send = async () => {
+    const missing = affected.filter((row) => !assignments[row.appointment_id])
+    if (missing.length > 0) {
+      setError('Assign a proposed slot for every selected patient before sending.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await sendEmergencyRescheduleProposals({
+        reason,
+        proposals: affected.map((row) => ({
+          appointment_id: row.appointment_id,
+          proposed_slot_id: assignments[row.appointment_id].id,
+        })),
+      })
+      if (result.failed.length > 0) {
+        const createdFailures = result.failed.filter((item) => item.proposal_id).length
+        setNotice(
+          createdFailures > 0
+            ? `Proposal created, but SMS delivery failed for ${createdFailures} patient${
+                createdFailures === 1 ? '' : 's'
+              }. You can retry from the pending proposals list.`
+            : `No proposal SMS was sent. ${result.failed.length} proposal${
+                result.failed.length === 1 ? '' : 's'
+              } could not be created.`
+        )
+      } else {
+        setNotice(`${result.sent.length} proposal SMS sent.`)
+      }
+      setReview(false)
+      setAffected([])
+      setAssignments({})
+      await loadMonitor()
+    } catch (e) {
+      setError(errorMessage(e, 'Could not send reschedule proposals.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resend = async (proposalId: string) => {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await resendEmergencyRescheduleProposal(proposalId)
+      setNotice('Pending proposal SMS resent.')
+      await loadMonitor()
+    } catch (e) {
+      setError(errorMessage(e, 'Could not resend the proposal SMS.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const readyToReview = affected.length > 0 && affected.every((row) => assignments[row.appointment_id])
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="section-kicker">Provider unavailable</h3>
+        <p className="mt-1 muted">
+          Send secure reschedule proposals when a provider cannot attend booked appointments.
+        </p>
+      </div>
+
+      <div className="card card-pad">
+        <div className="grid gap-3 md:grid-cols-[minmax(12rem,1fr)_minmax(9rem,12rem)_minmax(12rem,1fr)_auto] md:items-end">
+          <label className="text-xs text-slate-500">
+            Provider
+            <select
+              value={providerId}
+              onChange={(e) => {
+                setProviderId(e.target.value)
+                setAffected([])
+                setAssignments({})
+                setReview(false)
+              }}
+              className="form-control mt-1"
+            >
+              <option value="">Select provider…</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.profiles.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-slate-500">
+            Affected date
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="form-control mt-1"
+            />
+          </label>
+          <label className="text-xs text-slate-500">
+            Reason
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="form-control mt-1"
+            />
+          </label>
+          <button type="button" onClick={loadAffected} disabled={busy || !providerId} className="btn-secondary">
+            {busy ? 'Loading…' : 'Load affected'}
+          </button>
+        </div>
+
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {notice && <div className="alert-success mt-3">{notice}</div>}
+
+        {affected.length > 0 && !review && (
+          <div className="mt-5 space-y-3">
+            <p className="text-sm font-semibold text-slate-900">
+              {affected.length} booked appointment{affected.length === 1 ? '' : 's'} need proposals.
+            </p>
+            <ul className="divide-y divide-slate-100">
+              {affected.map((row) => (
+                <li key={row.appointment_id} className="py-3">
+                  <div className="grid gap-2 lg:grid-cols-[1fr_1.3fr] lg:items-start">
+                    <div className="text-sm">
+                      <p className="font-semibold text-slate-900">{row.patient_name}</p>
+                      <p className="text-slate-500">
+                        {row.service_name} · {formatSlotSample(row.slot_datetime)}
+                      </p>
+                      <p className="text-xs text-slate-400">Status: {row.status}</p>
+                    </div>
+                    <EmergencySlotPicker
+                      serviceId={row.service_id}
+                      providerId={providerId}
+                      busy={busy}
+                      selected={assignments[row.appointment_id] ?? null}
+                      assignedSlotIds={new Set(
+                        Object.entries(assignments)
+                          .filter(([appointmentId]) => appointmentId !== row.appointment_id)
+                          .map(([, slot]) => slot.id)
+                      )}
+                      onSelect={(slot) => {
+                        setAssignments((current) => {
+                          const next = { ...current, [row.appointment_id]: slot }
+                          for (const [appointmentId, assigned] of Object.entries(next)) {
+                            if (appointmentId !== row.appointment_id && assigned.id === slot.id) {
+                              delete next[appointmentId]
+                            }
+                          }
+                          return next
+                        })
+                      }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => setReview(true)}
+              disabled={!readyToReview}
+              className="btn-primary"
+            >
+              Review assignments
+            </button>
+          </div>
+        )}
+
+        {review && (
+          <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+            <p className="font-semibold text-slate-900">Review before sending</p>
+            <ul className="mt-3 divide-y divide-emerald-100">
+              {affected.map((row) => {
+                const slot = assignments[row.appointment_id]
+                return (
+                  <li key={row.appointment_id} className="py-2 text-sm">
+                    <span className="font-medium">{row.patient_name}</span>
+                    <span className="text-slate-500">
+                      {' '}
+                      · {formatSlotSample(row.slot_datetime)} → {formatSlotSample(slot.slot_datetime)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={send} disabled={busy} className="btn-primary">
+                {busy ? 'Sending…' : 'Send Reschedule Proposals'}
+              </button>
+              <button type="button" onClick={() => setReview(false)} disabled={busy} className="btn-secondary">
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <ProposalMonitor proposals={proposals} busy={busy} onResend={resend} />
+    </div>
+  )
+}
+
+function EmergencySlotPicker({
+  serviceId,
+  providerId,
+  selected,
+  assignedSlotIds,
+  busy,
+  onSelect,
+}: {
+  serviceId: string
+  providerId: string
+  selected: OpenSlot | null
+  assignedSlotIds: Set<string>
+  busy?: boolean
+  onSelect: (slot: OpenSlot) => void
+}) {
+  const [date, setDate] = useState(() => addDays(todayManila(), 1))
+  const [slots, setSlots] = useState<OpenSlot[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const rows = await fetchOpenSlotsForProvider(serviceId, providerId, date)
+        if (!cancelled) setSlots(rows)
+      } catch (e) {
+        if (!cancelled) setError(errorMessage(e, 'Could not load open slots.'))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [date, providerId, serviceId])
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-slate-500">
+          Proposed date
+          <input
+            type="date"
+            value={date}
+            min={todayManila()}
+            onChange={(e) => setDate(e.target.value)}
+            className="form-control mt-1"
+          />
+        </label>
+        {selected && (
+          <span className="text-xs font-medium text-emerald-700">
+            Selected: {formatSlotSample(selected.slot_datetime)}
+          </span>
+        )}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {loading ? (
+        <p className="mt-2 text-xs text-slate-400">Loading slots…</p>
+      ) : slots.length === 0 ? (
+        <p className="mt-2 text-xs text-slate-400">No available slots for this provider/date.</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {slots.map((slot) => (
+            <button
+              key={slot.id}
+              type="button"
+              onClick={() => onSelect(slot)}
+              disabled={busy || assignedSlotIds.has(slot.id)}
+              className={`min-h-8 rounded-lg border px-2.5 py-1 text-xs ${
+                selected?.id === slot.id
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : assignedSlotIds.has(slot.id)
+                    ? 'border-slate-100 bg-slate-50 text-slate-300'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300'
+              }`}
+            >
+              {formatSlotSample(slot.slot_datetime)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProposalMonitor({
+  proposals,
+  busy,
+  onResend,
+}: {
+  proposals: AdminRescheduleProposal[]
+  busy: boolean
+  onResend: (proposalId: string) => void
+}) {
+  if (proposals.length === 0) return null
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="border-b border-emerald-100 bg-white px-4 py-3">
+        <p className="section-kicker">Proposal status</p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {proposals.map((proposal) => (
+          <div
+            key={proposal.id}
+            className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[1fr_1fr_8rem_auto] md:items-center"
+          >
+            <div>
+              <p className="font-semibold text-slate-900">
+                {proposal.patients.profiles.full_name}
+              </p>
+              <p className="text-slate-500">{proposal.services.name}</p>
+            </div>
+            <p className="text-slate-600">
+              {formatSlotSample(proposal.proposed_appointment_at)}
+            </p>
+            <span>
+              <StatusBadge
+                tone={
+                  proposal.status === 'accepted'
+                    ? 'emerald'
+                    : proposal.status === 'declined'
+                      ? 'red'
+                      : proposal.status === 'pending'
+                        ? 'amber'
+                        : 'slate'
+                }
+              >
+                {proposal.status}
+              </StatusBadge>
+            </span>
+            <span className="md:text-right">
+              {proposal.status === 'pending' && (
+                <button
+                  type="button"
+                  onClick={() => onResend(proposal.id)}
+                  disabled={busy}
+                  className="btn-subtle min-h-8 px-2.5 py-1 text-xs"
+                >
+                  Resend SMS
+                </button>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -104,6 +104,11 @@ export function PatientDashboard() {
         <div className="space-y-4">
           {appointments.map((appt) => {
             const ticket = appt.queue_tickets
+            const pendingProposal = appt.appointment_reschedule_proposals?.find(
+              (proposal) =>
+                proposal.status === 'pending' &&
+                new Date(proposal.token_expires_at).getTime() > Date.now()
+            )
             return (
               <div
                 key={appt.id}
@@ -115,7 +120,9 @@ export function PatientDashboard() {
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[appt.status] ?? 'bg-gray-100 text-gray-600'}`}
                     >
-                      {STATUS_LABEL[appt.status] ?? appt.status}
+                      {pendingProposal
+                        ? 'Reschedule confirmation required'
+                        : (STATUS_LABEL[appt.status] ?? appt.status)}
                     </span>
                   </div>
                   <p className="break-words text-sm text-slate-500">
@@ -127,9 +134,15 @@ export function PatientDashboard() {
                       Ticket: {ticket.ticket_number} · Queue #{ticket.queue_position}
                     </p>
                   )}
+                  {pendingProposal && (
+                    <p className="break-words text-sm font-medium text-amber-700">
+                      Proposed new schedule: {formatSlot(pendingProposal.proposed_appointment_at)}.
+                      Please open the SMS link to confirm or decline.
+                    </p>
+                  )}
                 </div>
 
-                {appt.status === 'booked' && (
+                {appt.status === 'booked' && !pendingProposal && (
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Link
                       to={`/patient/book?reschedule=${appt.id}`}

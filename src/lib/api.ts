@@ -40,6 +40,13 @@ export interface Appointment {
   services: { name: string }
   providers: { profiles: { full_name: string } }
   time_slots: { slot_datetime: string }
+  appointment_reschedule_proposals?: {
+    id: string
+    status: string
+    proposed_appointment_at: string
+    reason: string
+    token_expires_at: string
+  }[]
   // queue_tickets.appointment_id is UNIQUE, so PostgREST treats this as a
   // to-ONE relationship and embeds it as a single object (or null) — NOT an
   // array. (The confirmation screen sidesteps this by reading the ticket from
@@ -118,6 +125,15 @@ export async function fetchOpenSlots(serviceId: string, manilaDate?: string): Pr
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
   return data as unknown as OpenSlot[]
+}
+
+export async function fetchOpenSlotsForProvider(
+  serviceId: string,
+  providerId: string,
+  manilaDate?: string
+): Promise<OpenSlot[]> {
+  const slots = await fetchOpenSlots(serviceId, manilaDate)
+  return slots.filter((slot) => slot.providers.id === providerId)
 }
 
 export interface DaySlotStatus {
@@ -359,6 +375,132 @@ export async function sendAppointmentSms(
     throw new Error(message || errorMessage(error, 'SMS notification could not be sent.'))
   }
   return data as AppointmentSmsResult
+}
+
+export interface RescheduleProposalRequest {
+  appointment_id: string
+  proposed_slot_id: string
+}
+
+export interface SendRescheduleProposalsResult {
+  success: boolean
+  sent: {
+    proposal_id: string
+    appointment_id: string
+    patient_name: string
+    proposed_appointment_at: string
+    notification_log_id: string
+  }[]
+  failed: { appointment_id?: string; proposal_id?: string; error: string }[]
+}
+
+export interface PublicRescheduleProposal {
+  proposal_id: string
+  status: string
+  effective_status: string
+  service_name: string
+  provider_name: string
+  original_appointment_at: string
+  proposed_appointment_at: string
+  reason: string
+  token_expires_at: string
+  responded_at: string | null
+}
+
+export interface RescheduleProposalResponseResult {
+  proposal_id: string
+  appointment_id: string
+  patient_id: string
+  patient_phone: string | null
+  service_name: string
+  proposed_appointment_at: string
+  status: 'accepted' | 'declined'
+}
+
+async function callRescheduleProposalFunction<T>(body: Record<string, unknown>): Promise<T> {
+  const publicAction = body.action === 'lookup' || body.action === 'respond'
+  if (publicAction) {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reschedule-proposal`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(body),
+      }
+    )
+    const parsed = (await response.json().catch(() => null)) as { error?: string } | T | null
+    if (!response.ok) {
+      const message =
+        parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string'
+          ? parsed.error
+          : GENERIC_ERR
+      throw new Error(message)
+    }
+    return parsed as T
+  }
+
+  const { data, error } = await supabase.functions.invoke('reschedule-proposal', { body })
+  if (error) {
+    let message = ''
+    const context = (error as { context?: unknown }).context
+    if (context instanceof Response) {
+      try {
+        const parsed = await context.json()
+        if (parsed && typeof parsed.error === 'string') message = parsed.error
+      } catch {
+        // Keep generic fallback.
+      }
+    }
+    throw new Error(message || errorMessage(error, GENERIC_ERR))
+  }
+  return data as T
+}
+
+export function sendEmergencyRescheduleProposals(input: {
+  reason: string
+  proposals: RescheduleProposalRequest[]
+  expiresHours?: number
+}): Promise<SendRescheduleProposalsResult> {
+  return callRescheduleProposalFunction<SendRescheduleProposalsResult>({
+    action: 'create',
+    reason: input.reason,
+    proposals: input.proposals,
+    expires_hours: input.expiresHours ?? 24,
+  })
+}
+
+export function resendEmergencyRescheduleProposal(
+  proposalId: string
+): Promise<{ success: boolean; sent: SendRescheduleProposalsResult['sent'][number] }> {
+  return callRescheduleProposalFunction({
+    action: 'resend',
+    proposal_id: proposalId,
+  })
+}
+
+export async function fetchPublicRescheduleProposal(
+  token: string
+): Promise<PublicRescheduleProposal> {
+  const result = await callRescheduleProposalFunction<{ proposal: PublicRescheduleProposal }>({
+    action: 'lookup',
+    token,
+  })
+  return result.proposal
+}
+
+export async function respondToRescheduleProposal(
+  token: string,
+  response: 'accepted' | 'declined'
+): Promise<RescheduleProposalResponseResult> {
+  const result = await callRescheduleProposalFunction<{ result: RescheduleProposalResponseResult }>({
+    action: 'respond',
+    token,
+    response,
+  })
+  return result.result
 }
 
 // 'sent' = accepted/transmitted by the gateway; 'delivered' = handset receipt
@@ -1194,6 +1336,51 @@ export async function fetchExceptionConflicts(
   return (data ?? []) as ExceptionConflict[]
 }
 
+export interface AdminRescheduleProposal {
+  id: string
+  appointment_id: string
+  status: string
+  original_appointment_at: string
+  proposed_appointment_at: string
+  reason: string
+  token_expires_at: string
+  responded_at: string | null
+  patients: { profiles: { full_name: string } }
+  services: { name: string }
+  providers: { profiles: { full_name: string } }
+  appointments: { status: string; queue_tickets: { ticket_number: string } | null } | null
+}
+
+export async function fetchAdminRescheduleProposals(input: {
+  providerId?: string
+  date?: string
+} = {}): Promise<AdminRescheduleProposal[]> {
+  let query = supabase
+    .from('appointment_reschedule_proposals')
+    .select(
+      `
+      id, appointment_id, status, original_appointment_at, proposed_appointment_at,
+      reason, token_expires_at, responded_at,
+      patients ( profiles ( full_name ) ),
+      services ( name ),
+      providers ( profiles ( full_name ) ),
+      appointments ( status, queue_tickets ( ticket_number ) )
+    `
+    )
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  if (input.providerId) query = query.eq('provider_id', input.providerId)
+  if (input.date) {
+    const { start, end } = manilaDayWindowFor(input.date)
+    query = query.gte('original_appointment_at', start).lte('original_appointment_at', end)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+  return (data ?? []) as unknown as AdminRescheduleProposal[]
+}
+
 // ------------------------------------------------------------
 // Announcements
 // ------------------------------------------------------------
@@ -1367,7 +1554,10 @@ export async function fetchMyAppointments(): Promise<Appointment[]> {
       services ( name ),
       providers ( profiles ( full_name ) ),
       time_slots ( slot_datetime ),
-      queue_tickets ( ticket_number, queue_position, qr_code, status )
+      queue_tickets ( ticket_number, queue_position, qr_code, status ),
+      appointment_reschedule_proposals (
+        id, status, proposed_appointment_at, reason, token_expires_at
+      )
     `
     )
     .in('status', ['booked', 'checked_in'])
