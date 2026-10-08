@@ -1859,25 +1859,25 @@ export async function updateMyProfile(
     throw new Error('Enter a valid Philippine cellphone number. Example: 9094445123.')
   }
 
-  const additionalEmails = uniqueNormalizedEmails(input.additionalEmails)
+  let additionalEmails = uniqueNormalizedEmails(input.additionalEmails)
   for (const additionalEmail of additionalEmails) {
     if (!EMAIL_RE.test(additionalEmail)) {
       throw new Error('Please enter a valid additional email address.')
     }
   }
-  const primaryEmails = new Set([email, (user.email ?? '').trim().toLowerCase()].filter(Boolean))
+  const currentAuthEmail = (user.email ?? '').trim().toLowerCase()
+  const emailChanged = email !== currentAuthEmail
+  const primaryEmails = new Set([email, ...(emailChanged ? [] : [currentAuthEmail])].filter(Boolean))
   if (additionalEmails.some((additionalEmail) => primaryEmails.has(additionalEmail))) {
     throw new Error('Additional email must be different from your primary email.')
   }
 
-  const additionalPhones = uniqueCanonicalPhones(input.additionalPhones)
+  let additionalPhones = uniqueCanonicalPhones(input.additionalPhones)
   if (canonicalPhone && additionalPhones.includes(canonicalPhone)) {
     throw new Error('Additional contact number must be different from your primary number.')
   }
 
   let emailConfirmationRequired = false
-  const currentAuthEmail = (user.email ?? '').trim().toLowerCase()
-  const emailChanged = email !== currentAuthEmail
 
   if (emailChanged) {
     if (!email) throw new Error('Email is required for login.')
@@ -1886,6 +1886,18 @@ export async function updateMyProfile(
 
     const updatedEmail = (updateData.user?.email ?? '').trim().toLowerCase()
     emailConfirmationRequired = updatedEmail !== email
+  }
+
+  if (emailConfirmationRequired) {
+    additionalEmails = uniqueNormalizedEmails([
+      email,
+      ...additionalEmails.filter((additionalEmail) => additionalEmail !== currentAuthEmail),
+    ])
+  } else {
+    additionalEmails = additionalEmails.filter((additionalEmail) => additionalEmail !== email)
+  }
+  if (canonicalPhone) {
+    additionalPhones = additionalPhones.filter((additionalPhone) => additionalPhone !== canonicalPhone)
   }
 
   const profilePatch: {

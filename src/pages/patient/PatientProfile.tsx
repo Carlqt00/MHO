@@ -63,6 +63,46 @@ function profilePhoneSubscriber(profile: PatientProfileData | null): string {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
+type ContactPromotion = { type: 'email' | 'phone'; value: string } | null
+
+function uniqueEmails(values: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const normalized = value.trim().toLowerCase()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
+function uniquePhones(values: string[]): string[] {
+  const result: string[] = []
+  for (const value of values) {
+    const canonical = toCanonicalPhilippineMobile(value)
+    if (!canonical || result.includes(canonical)) continue
+    result.push(canonical)
+  }
+  return result
+}
+
+function profileUpdateErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (/additional email must be different|duplicate|unique/i.test(message)) {
+    return 'That contact is already saved. Please use a different email or number.'
+  }
+  if (/valid additional email|valid email/i.test(message)) {
+    return 'Please enter a valid email address.'
+  }
+  if (/philippine|cellphone|phone/i.test(message)) {
+    return 'Please enter a valid Philippine cellphone number.'
+  }
+  if (/auth|email|otp|confirmation/i.test(message)) {
+    return 'Could not update your default email. Please try again or contact MHO.'
+  }
+  return message || 'Could not update your profile. Please try again.'
+}
 
 export function PatientProfile() {
   const { session, refreshSession } = useAuth()
@@ -86,6 +126,7 @@ export function PatientProfile() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [editError, setEditError] = useState('')
+  const [promotion, setPromotion] = useState<ContactPromotion>(null)
 
   useEffect(() => {
     if (!userId) return
@@ -118,6 +159,7 @@ export function PatientProfile() {
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
+    setPromotion(null)
     setEditMode(true)
   }
 
@@ -133,6 +175,7 @@ export function PatientProfile() {
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
+    setPromotion(null)
     setEditMode(false)
   }
 
@@ -171,6 +214,46 @@ export function PatientProfile() {
       setAdditionalPhones((phones) => [...phones, canonical])
     }
     setNewAdditionalPhone('')
+  }
+
+  const promoteAdditionalEmail = (email: string) => {
+    const promotedEmail = email.trim().toLowerCase()
+    const currentPrimaryEmail = editEmail.trim().toLowerCase()
+    setEditEmail(promotedEmail)
+    setAdditionalEmails(
+      uniqueEmails([
+        ...(currentPrimaryEmail ? [currentPrimaryEmail] : []),
+        ...additionalEmails.filter((savedEmail) => savedEmail.toLowerCase() !== promotedEmail),
+      ])
+    )
+    setEditError('')
+  }
+
+  const promoteAdditionalPhone = (phone: string) => {
+    const promotedPhone = toCanonicalPhilippineMobile(phone)
+    const currentPrimaryPhone = toCanonicalPhilippineMobile(editPhone)
+    if (!promotedPhone) {
+      setEditError('Please enter a valid Philippine cellphone number.')
+      return
+    }
+    setEditPhone(normalizePhilippineMobileSubscriber(promotedPhone))
+    setAdditionalPhones(
+      uniquePhones([
+        ...(currentPrimaryPhone ? [currentPrimaryPhone] : []),
+        ...additionalPhones.filter((savedPhone) => savedPhone !== promotedPhone),
+      ])
+    )
+    setEditError('')
+  }
+
+  const confirmPromotion = () => {
+    if (!promotion) return
+    if (promotion.type === 'email') {
+      promoteAdditionalEmail(promotion.value)
+    } else {
+      promoteAdditionalPhone(promotion.value)
+    }
+    setPromotion(null)
   }
 
   const validatePasswordChange = () => {
@@ -229,11 +312,11 @@ export function PatientProfile() {
         changePasswordOpen
           ? 'Profile and password updated successfully.'
           : result.emailConfirmationRequired
-          ? 'Profile updated. Please confirm the email change from your inbox before using the new email to log in.'
+          ? 'Confirmation is required before this email becomes your default email. Please check your inbox.'
           : 'Profile updated successfully.'
       )
     } catch (e) {
-      setEditError((e as Error).message)
+      setEditError(profileUpdateErrorMessage(e))
     } finally {
       setSaving(false)
     }
@@ -275,6 +358,44 @@ export function PatientProfile() {
         <div className="alert-success mb-4" role="status">{notice}</div>
       )}
 
+      {promotion && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-promotion-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-emerald-100 bg-white p-5 shadow-xl shadow-slate-950/15">
+            <h2 id="profile-promotion-title" className="text-base font-semibold text-slate-900">
+              {promotion.type === 'email'
+                ? `Set ${promotion.value} as your default email?`
+                : `Set ${promotion.value} as your default cellphone number?`}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {promotion.type === 'email'
+                ? 'This will also become your login email after the change is saved and confirmed if required.'
+                : 'Future SMS notifications will be sent to this number after the change is saved.'}
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPromotion(null)}
+                className="btn-secondary min-h-10 w-full px-4 py-2 sm:w-auto"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmPromotion}
+                className="btn-primary min-h-10 w-full px-4 py-2 sm:w-auto"
+              >
+                Set as Default
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-slate-400">Loading…</p>
       ) : (
@@ -290,62 +411,74 @@ export function PatientProfile() {
               )}
             </div>
             {editMode ? (
-              <div className="space-y-3">
+              <div className="mx-auto max-w-3xl space-y-4">
                 {editError && <div className="alert-error">{editError}</div>}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-x-5">
-                  <div className="space-y-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</p>
-                    <p className="mt-1 break-words text-slate-800">{profile?.full_name || '—'}</p>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Name</p>
+                    <p className="mt-1 break-words text-base font-semibold text-slate-900">
+                      {profile?.full_name || '—'}
+                    </p>
                   </div>
-                  <div className="space-y-3">
-                    <label className="block">
-                      <span className="label">Email</span>
+
+                  <label className="block">
+                    <span className="label">Email</span>
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                      placeholder="name@example.com"
+                      disabled={saving}
+                    />
+                  </label>
+
+                  <div>
+                    <span className="label">Additional Email</span>
+                    <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row">
                       <input
                         type="email"
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
-                        placeholder="name@example.com"
+                        value={newAdditionalEmail}
+                        onChange={(e) => setNewAdditionalEmail(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addAdditionalEmail()
+                          }
+                        }}
+                        className="h-11 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                        placeholder="Enter additional email"
                         disabled={saving}
                       />
-                    </label>
-                    <div>
-                      <span className="label">Additional Email</span>
-                      <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row">
-                        <input
-                          type="email"
-                          value={newAdditionalEmail}
-                          onChange={(e) => setNewAdditionalEmail(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              addAdditionalEmail()
-                            }
-                          }}
-                          className="h-11 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
-                          placeholder="Enter additional email"
-                          disabled={saving}
-                        />
-                        <button
-                          type="button"
-                          onClick={addAdditionalEmail}
-                          disabled={saving}
-                          className="btn-secondary h-11 w-full shrink-0 sm:w-24"
-                        >
-                          + Add
-                        </button>
-                      </div>
-                      {additionalEmails.length > 0 && (
-                        <div className="mt-2 space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                            Added Emails
-                          </p>
-                          {additionalEmails.map((email) => (
-                            <div
-                              key={email}
-                              className="flex min-h-9 min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5"
-                            >
-                              <span className="min-w-0 break-all text-sm text-slate-700">{email}</span>
+                      <button
+                        type="button"
+                        onClick={addAdditionalEmail}
+                        disabled={saving}
+                        className="btn-secondary h-11 w-full shrink-0 sm:w-24"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                    {additionalEmails.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Added Emails
+                        </p>
+                        {additionalEmails.map((email) => (
+                          <div
+                            key={email}
+                            className="flex min-w-0 flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <span className="min-w-0 break-all text-sm font-medium text-slate-700">{email}</span>
+                            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => setPromotion({ type: 'email', value: email })}
+                                disabled={saving}
+                                className="min-h-8 rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                              >
+                                Set as Default
+                              </button>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -354,75 +487,85 @@ export function PatientProfile() {
                                   )
                                 }
                                 disabled={saving}
-                                className="h-7 shrink-0 rounded-md px-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
+                                className="min-h-8 rounded-md px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
                               >
                                 Remove
                               </button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="space-y-3">
-                    <label className="block">
-                      <span className="label">Cellphone Number</span>
-                      <div className="mt-1 flex h-11 min-w-0 overflow-hidden rounded-lg border border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus:ring-emerald-100">
-                        <span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-500">
+
+                  <label className="block">
+                    <span className="label">Cellphone Number</span>
+                    <div className="mt-1 flex h-11 min-w-0 overflow-hidden rounded-lg border border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-100">
+                      <span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-500">
+                        +63
+                      </span>
+                      <input
+                        inputMode="numeric"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(normalizePhilippineMobileSubscriber(e.target.value))}
+                        className="min-w-0 flex-1 px-3 text-slate-900 outline-none"
+                        placeholder="9094445123"
+                        disabled={saving}
+                      />
+                    </div>
+                  </label>
+
+                  <div>
+                    <span className="label">Additional Contact Number</span>
+                    <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row">
+                      <div className="flex h-11 min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-100">
+                        <span className="flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-500">
                           +63
                         </span>
                         <input
                           inputMode="numeric"
-                          value={editPhone}
-                          onChange={(e) => setEditPhone(normalizePhilippineMobileSubscriber(e.target.value))}
+                          value={newAdditionalPhone}
+                          onChange={(e) => setNewAdditionalPhone(normalizePhilippineMobileSubscriber(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addAdditionalPhone()
+                            }
+                          }}
                           className="min-w-0 flex-1 px-3 text-slate-900 outline-none"
-                          placeholder="9094445123"
+                          placeholder="9672345672"
                           disabled={saving}
                         />
                       </div>
-                    </label>
-                    <div>
-                      <span className="label">Additional Contact Number</span>
-                      <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row">
-                        <div className="flex h-11 min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-100">
-                          <span className="flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-500">
-                            +63
-                          </span>
-                          <input
-                            inputMode="numeric"
-                            value={newAdditionalPhone}
-                            onChange={(e) => setNewAdditionalPhone(normalizePhilippineMobileSubscriber(e.target.value))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                addAdditionalPhone()
-                              }
-                            }}
-                            className="min-w-0 flex-1 px-3 text-slate-900 outline-none"
-                            placeholder="9672345672"
-                            disabled={saving}
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={addAdditionalPhone}
-                          disabled={saving}
-                          className="btn-secondary h-11 w-full shrink-0 sm:w-24"
-                        >
-                          + Add
-                        </button>
-                      </div>
-                      {additionalPhones.length > 0 && (
-                        <div className="mt-2 space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                            Added Numbers
-                          </p>
-                          {additionalPhones.map((phone) => (
-                            <div
-                              key={phone}
-                              className="flex min-h-9 min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5"
-                            >
-                              <span className="min-w-0 break-all text-sm text-slate-700">{phone}</span>
+                      <button
+                        type="button"
+                        onClick={addAdditionalPhone}
+                        disabled={saving}
+                        className="btn-secondary h-11 w-full shrink-0 sm:w-24"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                    {additionalPhones.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Added Numbers
+                        </p>
+                        {additionalPhones.map((phone) => (
+                          <div
+                            key={phone}
+                            className="flex min-w-0 flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <span className="min-w-0 break-all text-sm font-medium text-slate-700">{phone}</span>
+                            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => setPromotion({ type: 'phone', value: phone })}
+                                disabled={saving}
+                                className="min-h-8 rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                              >
+                                Set as Default
+                              </button>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -431,15 +574,15 @@ export function PatientProfile() {
                                   )
                                 }
                                 disabled={saving}
-                                className="h-7 shrink-0 rounded-md px-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
+                                className="min-h-8 rounded-md px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
                               >
                                 Remove
                               </button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="border-t border-slate-200 pt-3">
@@ -525,14 +668,16 @@ export function PatientProfile() {
                 </div>
               </div>
             ) : (
-              <dl className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="space-y-1">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</dt>
-                  <dd className="text-slate-800">{profile?.full_name || '—'}</dd>
+              <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 px-4 py-3 md:col-span-2">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Name</dt>
+                  <dd className="mt-1 break-words text-base font-semibold text-slate-900">
+                    {profile?.full_name || '—'}
+                  </dd>
                 </div>
-                <div className="space-y-1">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Email</dt>
-                  <dd className="break-all text-slate-800">
+                <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm shadow-emerald-950/5">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Primary Email</dt>
+                  <dd className="mt-1 flex min-w-0 flex-wrap items-center gap-2 break-all text-sm font-medium text-slate-900">
                     {profile?.email ? (
                       <a href={`mailto:${profile.email}`} className="hover:text-emerald-800">
                         {profile.email}
@@ -540,21 +685,53 @@ export function PatientProfile() {
                     ) : (
                       '—'
                     )}
+                    {profile?.email && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                        Default
+                      </span>
+                    )}
                   </dd>
-                  {profile?.additional_emails.map((email) => (
-                    <dd key={email} className="break-all text-slate-700">
-                      {email}
-                    </dd>
-                  ))}
+                  {profile?.additional_emails && profile.additional_emails.length > 0 && (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Additional Email{profile.additional_emails.length === 1 ? '' : 's'}
+                      </dt>
+                      <div className="mt-2 space-y-1.5">
+                        {profile.additional_emails.map((email) => (
+                          <dd key={email} className="break-all text-sm text-slate-700">
+                            {email}
+                          </dd>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-1">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Cellphone Number</dt>
-                  <dd className="text-slate-800">{profile?.phone || '—'}</dd>
-                  {profile?.additional_phones.map((phone) => (
-                    <dd key={phone} className="text-slate-700">
-                      {phone}
-                    </dd>
-                  ))}
+                <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm shadow-emerald-950/5">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Primary Cellphone Number
+                  </dt>
+                  <dd className="mt-1 flex min-w-0 flex-wrap items-center gap-2 break-all text-sm font-medium text-slate-900">
+                    <span>{profile?.phone || '—'}</span>
+                    {profile?.phone && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                        Default
+                      </span>
+                    )}
+                  </dd>
+                  {profile?.additional_phones && profile.additional_phones.length > 0 && (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Additional Contact Number{profile.additional_phones.length === 1 ? '' : 's'}
+                      </dt>
+                      <div className="mt-2 space-y-1.5">
+                        {profile.additional_phones.map((phone) => (
+                          <dd key={phone} className="break-all text-sm text-slate-700">
+                            {phone}
+                          </dd>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </dl>
             )}
@@ -562,10 +739,10 @@ export function PatientProfile() {
 
           {/* 2. Current booking(s) with queue number + QR check-in code */}
           <section>
-            <h2 className="mb-4 section-title">Current Booking</h2>
+            <h2 className="mb-4 section-title">Current Appointment</h2>
             {current.length === 0 ? (
               <div className="empty-state">
-                Wala kang kasalukuyang booking. / You have no current booking.
+                Wala kang kasalukuyang appointment. / You have no current appointment.
               </div>
             ) : (
               <div className="space-y-4">

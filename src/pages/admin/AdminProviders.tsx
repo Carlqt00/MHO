@@ -754,6 +754,11 @@ function ReschedulePicker({
 }
 
 function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvailability[] }) {
+  type LoadToast = {
+    kind: 'success' | 'info' | 'error'
+    message: string
+  }
+
   const [providerId, setProviderId] = useState('')
   const [date, setDate] = useState(todayManila())
   const [reason, setReason] = useState('Provider emergency')
@@ -764,6 +769,13 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [review, setReview] = useState(false)
+  const [loadToast, setLoadToast] = useState<LoadToast | null>(null)
+
+  useEffect(() => {
+    if (!loadToast) return
+    const timeoutId = window.setTimeout(() => setLoadToast(null), 4000)
+    return () => window.clearTimeout(timeoutId)
+  }, [loadToast])
 
   const loadMonitor = useCallback(async () => {
     if (!providerId || !date) {
@@ -781,14 +793,33 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
     setBusy(true)
     setError('')
     setNotice('')
+    setLoadToast(null)
     setReview(false)
     setAssignments({})
     try {
       const rows = await fetchExceptionConflicts(providerId, date)
-      setAffected(rows.filter((row) => row.status === 'booked'))
+      const bookedRows = rows.filter((row) => row.status === 'booked')
+      setAffected(bookedRows)
       await loadMonitor()
+      setLoadToast(
+        bookedRows.length > 0
+          ? {
+              kind: 'success',
+              message: `${bookedRows.length} affected appointment${
+                bookedRows.length === 1 ? '' : 's'
+              } loaded successfully.`,
+            }
+          : {
+              kind: 'info',
+              message: 'No affected appointments found for this provider and date.',
+            }
+      )
     } catch (e) {
-      setError(errorMessage(e, 'Could not load affected appointments.'))
+      console.error(errorMessage(e, 'Could not load affected appointments.'))
+      setLoadToast({
+        kind: 'error',
+        message: 'Unable to load affected appointments. Please try again.',
+      })
     } finally {
       setBusy(false)
     }
@@ -855,6 +886,23 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
 
   return (
     <div className="space-y-4">
+      {loadToast && (
+        <div className="pointer-events-none fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] sm:right-6 sm:top-6">
+          <div
+            role={loadToast.kind === 'error' ? 'alert' : 'status'}
+            aria-live={loadToast.kind === 'error' ? 'assertive' : 'polite'}
+            className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm font-medium shadow-lg ${
+              loadToast.kind === 'success'
+                ? 'border-emerald-100 bg-emerald-50 text-emerald-800 shadow-emerald-950/10'
+                : loadToast.kind === 'info'
+                  ? 'border-sky-100 bg-sky-50 text-sky-800 shadow-sky-950/10'
+                  : 'border-red-100 bg-red-50 text-red-700 shadow-red-950/10'
+            }`}
+          >
+            {loadToast.message}
+          </div>
+        </div>
+      )}
       <div>
         <h3 className="section-kicker">Provider unavailable</h3>
         <p className="mt-1 muted">
