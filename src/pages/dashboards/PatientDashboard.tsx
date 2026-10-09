@@ -135,10 +135,23 @@ export function PatientDashboard() {
                     </p>
                   )}
                   {pendingProposal && (
-                    <p className="break-words text-sm font-medium text-amber-700">
-                      Proposed new schedule: {formatSlot(pendingProposal.proposed_appointment_at)}.
-                      Please open the SMS link to confirm or decline.
-                    </p>
+                    <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        Proposed new schedule
+                      </p>
+                      <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+                        {formatSlot(pendingProposal.proposed_appointment_at)}
+                      </p>
+                      <p className="mt-1 break-words text-sm text-emerald-800">
+                        Use the confirmation code sent by SMS to respond.
+                      </p>
+                      <Link
+                        to="/reschedule-response"
+                        className="btn-primary mt-3 inline-flex w-full justify-center px-3 py-2 text-sm sm:w-auto"
+                      >
+                        Respond to Reschedule
+                      </Link>
+                    </div>
                   )}
                 </div>
 
