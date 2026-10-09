@@ -37,6 +37,7 @@ function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           {/* Public, no-login QR check-in status page */}
           <Route path="/checkin/:code" element={<Checkin />} />
+          <Route path="/reschedule-response" element={<RescheduleResponse />} />
           <Route path="/reschedule-response/:token" element={<RescheduleResponse />} />
           <Route
             path="/change-password"

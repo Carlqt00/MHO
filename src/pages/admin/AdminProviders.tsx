@@ -785,6 +785,35 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
     setProposals(await fetchAdminRescheduleProposals({ providerId, date }))
   }, [providerId, date])
 
+  const proposalCreateFailureMessage = (rawErrors: string[]): string => {
+    const raw = rawErrors.join(' ')
+    if (/ERR_PENDING_EXISTS/i.test(raw)) {
+      return 'Appointment already has a pending reschedule proposal.'
+    }
+    if (/ERR_INVALID_STATUS/i.test(raw)) {
+      return 'This appointment is no longer eligible for rescheduling.'
+    }
+    if (/ERR_ALREADY_BOOKED/i.test(raw)) {
+      return 'Selected slot is no longer available.'
+    }
+    if (/ERR_SLOT_HELD/i.test(raw)) {
+      return 'Selected slot is already held for another reschedule request.'
+    }
+    if (/ERR_SERVICE_MISMATCH|ERR_PROVIDER_MISMATCH|Invalid appointment or slot id/i.test(raw)) {
+      return 'Please choose a different proposed date/time.'
+    }
+    if (/ERR_SLOT_PAST/i.test(raw)) {
+      return 'Selected slot is no longer available. Please choose a different proposed date/time.'
+    }
+    if (/ERR_ON_EXCEPTION_DATE/i.test(raw)) {
+      return 'The selected provider is unavailable on that proposed date. Please choose a different date/time.'
+    }
+    if (/ERR_NOT_FOUND/i.test(raw)) {
+      return 'Appointment or selected slot could not be found. Please reload and try again.'
+    }
+    return 'Unable to create the reschedule proposal. Please choose a different proposed date/time.'
+  }
+
   const loadAffected = async () => {
     if (!providerId) {
       setError('Select a provider first.')
@@ -844,14 +873,16 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
       })
       if (result.failed.length > 0) {
         const createdFailures = result.failed.filter((item) => item.proposal_id).length
+        const createFailures = result.failed.filter((item) => !item.proposal_id)
+        if (createFailures.length > 0) {
+          console.error('Emergency reschedule proposal creation failed:', createFailures)
+        }
         setNotice(
           createdFailures > 0
             ? `Proposal created, but SMS delivery failed for ${createdFailures} patient${
                 createdFailures === 1 ? '' : 's'
               }. You can retry from the pending proposals list.`
-            : `No proposal SMS was sent. ${result.failed.length} proposal${
-                result.failed.length === 1 ? '' : 's'
-              } could not be created.`
+            : proposalCreateFailureMessage(createFailures.map((item) => item.error))
         )
       } else {
         setNotice(`${result.sent.length} proposal SMS sent.`)
@@ -873,7 +904,7 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
     setNotice('')
     try {
       await resendEmergencyRescheduleProposal(proposalId)
-      setNotice('Pending proposal SMS resent.')
+      setNotice('Reschedule confirmation SMS sent successfully.')
       await loadMonitor()
     } catch (e) {
       setError(errorMessage(e, 'Could not resend the proposal SMS.'))

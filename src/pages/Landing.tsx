@@ -46,6 +46,12 @@ export function Landing() {
                 I Already Have an Account
               </Link>
             </div>
+            <Link
+              to="/reschedule-response"
+              className="mt-4 inline-flex text-sm font-medium text-emerald-700 hover:text-emerald-800"
+            >
+              Respond to Reschedule
+            </Link>
           </section>
 
           <div className="mx-auto mt-10 grid max-w-5xl gap-4 text-left sm:grid-cols-3">

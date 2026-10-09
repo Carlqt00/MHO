@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   fetchPublicRescheduleProposal,
+  fetchPublicRescheduleProposalByCode,
   respondToRescheduleProposal,
+  respondToRescheduleProposalByCode,
   type PublicRescheduleProposal,
 } from '../lib/api'
 
@@ -26,13 +28,19 @@ function answeredText(status: string) {
 
 export function RescheduleResponse() {
   const { token = '' } = useParams()
+  const isTokenFlow = Boolean(token)
+  const [code, setCode] = useState('')
+  const [verifiedCode, setVerifiedCode] = useState('')
   const [proposal, setProposal] = useState<PublicRescheduleProposal | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(isTokenFlow)
   const [submitting, setSubmitting] = useState<'accepted' | 'declined' | null>(null)
   const [error, setError] = useState('')
   const [done, setDone] = useState<'accepted' | 'declined' | null>(null)
 
   useEffect(() => {
+    if (!isTokenFlow) {
+      return
+    }
     let cancelled = false
     const load = async () => {
       setLoading(true)
@@ -52,7 +60,39 @@ export function RescheduleResponse() {
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [isTokenFlow, token])
+
+  const normalizedCode = code.toUpperCase().replace(/[^A-Z2-9]/g, '')
+
+  const lookupCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (normalizedCode.length < 8) {
+      setError('Enter the 8-character confirmation code from your SMS.')
+      return
+    }
+    setLoading(true)
+    setError('')
+    setProposal(null)
+    setDone(null)
+    try {
+      const row = await fetchPublicRescheduleProposalByCode(normalizedCode)
+      setProposal(row)
+      setVerifiedCode(normalizedCode)
+    } catch (e) {
+      const message = (e as Error).message
+      if (message === 'rate_limited') {
+        setError('Too many attempts. Please wait a few minutes before trying again.')
+      } else if (message === 'invalid_or_unavailable' || message === 'not_found') {
+        setError('This reschedule request has already been answered or the code is no longer valid.')
+      } else {
+        setError(
+          message || 'This reschedule request has already been answered or the code is no longer valid.'
+        )
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const respond = async (response: 'accepted' | 'declined') => {
     if (
@@ -64,14 +104,24 @@ export function RescheduleResponse() {
     setSubmitting(response)
     setError('')
     try {
-      await respondToRescheduleProposal(token, response)
+      if (isTokenFlow) {
+        await respondToRescheduleProposal(token, response)
+      } else {
+        await respondToRescheduleProposalByCode(verifiedCode, response)
+      }
       setDone(response)
+      if (!isTokenFlow) {
+        setProposal(null)
+        setVerifiedCode('')
+      }
     } catch (e) {
       const message = (e as Error).message
       if (message === 'already_answered') {
         setError('This reschedule request has already been answered.')
       } else if (message === 'expired') {
         setError('This reschedule request has expired. Please contact MHO Daraga.')
+      } else if (message === 'rate_limited') {
+        setError('Too many attempts. Please wait a few minutes before trying again.')
       } else {
         setError(message || 'Could not record your response.')
       }
@@ -88,13 +138,46 @@ export function RescheduleResponse() {
             MHO Daraga
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">
-            Appointment Reschedule Request
+            {isTokenFlow ? 'Appointment Reschedule Request' : 'Respond to Reschedule'}
           </h1>
         </div>
 
         <div className="card card-pad">
           {loading ? (
             <p className="text-slate-500">Loading request…</p>
+          ) : !isTokenFlow && !proposal && !done ? (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">Confirmation Code</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Enter the code from your MHO Daraga reschedule SMS.
+                </p>
+              </div>
+              {error && (
+                <Result
+                  title={error}
+                  detail="Please check the code and try again, or contact MHO Daraga for assistance."
+                  tone="warn"
+                />
+              )}
+              <form onSubmit={lookupCode} className="space-y-3">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Confirmation Code
+                  <input
+                    value={code}
+                    onChange={(event) => setCode(event.target.value.toUpperCase())}
+                    inputMode="text"
+                    autoComplete="one-time-code"
+                    maxLength={11}
+                    className="form-control mt-1 text-center text-lg font-semibold tracking-[0.25em]"
+                    placeholder="K7M4Q9P2"
+                  />
+                </label>
+                <button type="submit" className="btn-primary w-full sm:w-auto">
+                  Continue
+                </button>
+              </form>
+            </div>
           ) : done === 'accepted' ? (
             <Result
               title="Your appointment has been successfully rescheduled."

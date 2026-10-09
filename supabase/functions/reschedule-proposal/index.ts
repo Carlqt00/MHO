@@ -22,6 +22,7 @@ interface Body {
   proposals?: CreateAssignment[]
   proposal_id?: string
   token?: string
+  code?: string
   response?: 'accepted' | 'declined'
 }
 
@@ -39,7 +40,7 @@ interface ProposalSmsDetails {
   token_expires_at: string
 }
 
-const DEFAULT_ORIGIN = 'https://mho-daraga.vercel.app'
+const RESPONSE_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -49,16 +50,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value)
-}
-
-function baseUrl(): string {
-  return (
-    Deno.env.get('PUBLIC_SITE_URL')?.trim() ||
-    Deno.env.get('APP_BASE_URL')?.trim() ||
-    Deno.env.get('SITE_URL')?.trim() ||
-    DEFAULT_ORIGIN
-  ).replace(/\/+$/, '')
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function randomToken(): string {
@@ -68,18 +60,24 @@ function randomToken(): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
+function randomResponseCode(): string {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => RESPONSE_CODE_ALPHABET[byte % RESPONSE_CODE_ALPHABET.length]).join('')
+}
+
+function normalizeResponseCode(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z2-9]/g, '')
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const data = new TextEncoder().encode(value)
   const digest = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function responseUrl(token: string): string {
-  return `${baseUrl()}/reschedule-response/${encodeURIComponent(token)}`
-}
-
-function proposalMessage(row: ProposalSmsDetails, token: string): string {
-  return `MHO Daraga: Due to an unexpected provider emergency, we need to move your ${row.service_name} appointment. Proposed new schedule: ${formatAppointmentTime(row.proposed_appointment_at)}. Please confirm or decline here: ${responseUrl(token)}`
+function proposalMessage(row: ProposalSmsDetails, responseCode: string): string {
+  return `MHO Daraga: Due to a provider emergency, we propose moving your ${row.service_name} to ${formatAppointmentTime(row.proposed_appointment_at)}. Confirmation code: ${responseCode}. Open the MHO Daraga website and choose Respond to Reschedule.`
 }
 
 function acceptedMessage(serviceName: string, proposedAt: string): string {
@@ -88,6 +86,13 @@ function acceptedMessage(serviceName: string, proposedAt: string): string {
 
 function declinedMessage(): string {
   return 'MHO Daraga: You declined the proposed reschedule. The affected appointment has been cancelled. You may contact MHO Daraga or create a new appointment if needed.'
+}
+
+async function attemptKeyHash(req: Request): Promise<string> {
+  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  const realIp = req.headers.get('x-real-ip')?.trim()
+  const userAgent = req.headers.get('user-agent')?.slice(0, 200) ?? ''
+  return sha256Hex(`${forwarded || realIp || 'unknown'}|${userAgent}`)
 }
 
 async function authenticatedContext(req: Request): Promise<{
@@ -143,14 +148,14 @@ function serviceContext(): SupabaseClient {
 async function sendProposalSms(
   service: SupabaseClient,
   row: ProposalSmsDetails,
-  token: string,
+  responseCode: string,
   event: string
 ) {
   const phone = normalizePhilippineMobile(row.patient_phone ?? '') ?? row.patient_phone ?? ''
   const result = await sendSms(service, {
     event,
     recipient: phone,
-    message: proposalMessage(row, token),
+    message: proposalMessage(row, responseCode),
     patientId: row.patient_id,
     appointmentId: row.appointment_id,
   })
@@ -173,33 +178,48 @@ Deno.serve(async (req) => {
 
     if (action === 'lookup') {
       const token = (body.token ?? '').trim()
-      if (!token) return json({ error: 'Response token is required.' }, 400)
+      const code = normalizeResponseCode(body.code ?? '')
+      if (!token && !code) return json({ error: 'Response token or confirmation code is required.' }, 400)
       const service = serviceContext()
-      const tokenHash = await sha256Hex(token)
-      const { data, error } = await service.rpc('get_reschedule_proposal_by_token', {
-        p_token_hash: tokenHash,
-      })
-      if (error) throw new HttpError(500, 'Could not load this reschedule request.')
+      const { data, error } = token
+        ? await service.rpc('get_reschedule_proposal_by_token', {
+            p_token_hash: await sha256Hex(token),
+          })
+        : await service.rpc('get_reschedule_proposal_by_code', {
+            p_response_code_hash: await sha256Hex(code),
+            p_attempt_key_hash: await attemptKeyHash(req),
+          })
+      if (error) {
+        if (error.message?.includes('ERR_RATE_LIMITED')) return json({ error: 'rate_limited' }, 429)
+        throw new HttpError(500, 'Could not load this reschedule request.')
+      }
       const row = Array.isArray(data) ? data[0] : null
-      if (!row) return json({ error: 'Reschedule request not found.' }, 404)
+      if (!row) return json({ error: 'invalid_or_unavailable' }, 404)
       return json({ proposal: row })
     }
 
     if (action === 'respond') {
       const token = (body.token ?? '').trim()
+      const code = normalizeResponseCode(body.code ?? '')
       const response = body.response
-      if (!token) return json({ error: 'Response token is required.' }, 400)
+      if (!token && !code) return json({ error: 'Response token or confirmation code is required.' }, 400)
       if (response !== 'accepted' && response !== 'declined') {
         return json({ error: 'Choose accepted or declined.' }, 400)
       }
       const service = serviceContext()
-      const tokenHash = await sha256Hex(token)
-      const { data, error } = await service.rpc('respond_reschedule_proposal', {
-        p_token_hash: tokenHash,
-        p_response: response,
-      })
+      const { data, error } = token
+        ? await service.rpc('respond_reschedule_proposal', {
+            p_token_hash: await sha256Hex(token),
+            p_response: response,
+          })
+        : await service.rpc('respond_reschedule_proposal_by_code', {
+            p_response_code_hash: await sha256Hex(code),
+            p_response: response,
+            p_attempt_key_hash: await attemptKeyHash(req),
+          })
       if (error) {
         const raw = error.message ?? ''
+        if (raw.includes('ERR_RATE_LIMITED')) return json({ error: 'rate_limited' }, 429)
         if (raw.includes('ERR_ALREADY_ANSWERED')) return json({ error: 'already_answered' }, 409)
         if (raw.includes('ERR_EXPIRED')) return json({ error: 'expired' }, 410)
         if (raw.includes('ERR_NOT_FOUND')) return json({ error: 'not_found' }, 404)
@@ -252,29 +272,42 @@ Deno.serve(async (req) => {
       const failed = []
       for (const item of proposals) {
         if (!isUuid(item.appointment_id) || !isUuid(item.proposed_slot_id)) {
-          failed.push({ appointment_id: item.appointment_id, error: 'Invalid appointment or slot id.' })
+          failed.push({
+            appointment_id: item.appointment_id,
+            proposed_slot_id: item.proposed_slot_id,
+            error: 'Invalid appointment or slot id.',
+          })
           continue
         }
         const token = randomToken()
         const tokenHash = await sha256Hex(token)
+        const responseCode = randomResponseCode()
+        const responseCodeHash = await sha256Hex(responseCode)
         const { data, error } = await service.rpc('admin_create_reschedule_proposal', {
           p_appointment_id: item.appointment_id,
           p_proposed_slot_id: item.proposed_slot_id,
           p_reason: reason,
           p_token_hash: tokenHash,
           p_token_expires_at: expiresAt,
+          p_response_code_hash: responseCodeHash,
+          p_response_code_expires_at: expiresAt,
         })
         if (error) {
           console.error('reschedule-proposal create RPC failed:', {
             appointment_id: item.appointment_id,
+            proposed_slot_id: item.proposed_slot_id,
             message: error.message,
           })
-          failed.push({ appointment_id: item.appointment_id, error: error.message })
+          failed.push({
+            appointment_id: item.appointment_id,
+            proposed_slot_id: item.proposed_slot_id,
+            error: error.message,
+          })
           continue
         }
         const row = (Array.isArray(data) ? data[0] : data) as ProposalSmsDetails
         try {
-          sent.push(await sendProposalSms(smsService, row, token, 'emergency_reschedule_proposed'))
+          sent.push(await sendProposalSms(smsService, row, responseCode, 'emergency_reschedule_proposed'))
         } catch (err) {
           console.error('reschedule-proposal SMS send failed:', {
             appointment_id: item.appointment_id,
@@ -283,6 +316,7 @@ Deno.serve(async (req) => {
           })
           failed.push({
             appointment_id: item.appointment_id,
+            proposed_slot_id: item.proposed_slot_id,
             proposal_id: row.proposal_id,
             error: err instanceof Error ? err.message : 'SMS could not be sent.',
           })
@@ -296,14 +330,18 @@ Deno.serve(async (req) => {
       if (!isUuid(proposalId)) return json({ error: 'Valid proposal id is required.' }, 400)
       const token = randomToken()
       const tokenHash = await sha256Hex(token)
+      const responseCode = randomResponseCode()
+      const responseCodeHash = await sha256Hex(responseCode)
       const { data, error } = await service.rpc('admin_rotate_reschedule_proposal_token', {
         p_proposal_id: proposalId,
         p_token_hash: tokenHash,
         p_token_expires_at: expiresAt,
+        p_response_code_hash: responseCodeHash,
+        p_response_code_expires_at: expiresAt,
       })
       if (error) throw new HttpError(400, error.message)
       const row = (Array.isArray(data) ? data[0] : data) as ProposalSmsDetails
-      const sent = await sendProposalSms(smsService, row, token, 'emergency_reschedule_proposal_resent')
+      const sent = await sendProposalSms(smsService, row, responseCode, 'emergency_reschedule_proposal_resent')
       return json({ success: true, sent })
     }
 

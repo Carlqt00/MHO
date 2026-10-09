@@ -391,7 +391,7 @@ export interface SendRescheduleProposalsResult {
     proposed_appointment_at: string
     notification_log_id: string
   }[]
-  failed: { appointment_id?: string; proposal_id?: string; error: string }[]
+  failed: { appointment_id?: string; proposed_slot_id?: string; proposal_id?: string; error: string }[]
 }
 
 export interface PublicRescheduleProposal {
@@ -491,6 +491,16 @@ export async function fetchPublicRescheduleProposal(
   return result.proposal
 }
 
+export async function fetchPublicRescheduleProposalByCode(
+  code: string
+): Promise<PublicRescheduleProposal> {
+  const result = await callRescheduleProposalFunction<{ proposal: PublicRescheduleProposal }>({
+    action: 'lookup',
+    code,
+  })
+  return result.proposal
+}
+
 export async function respondToRescheduleProposal(
   token: string,
   response: 'accepted' | 'declined'
@@ -500,6 +510,20 @@ export async function respondToRescheduleProposal(
     token,
     response,
   })
+  return result.result
+}
+
+export async function respondToRescheduleProposalByCode(
+  code: string,
+  response: 'accepted' | 'declined'
+): Promise<RescheduleProposalResponseResult> {
+  const result = await callRescheduleProposalFunction<{ result: RescheduleProposalResponseResult }>(
+    {
+      action: 'respond',
+      code,
+      response,
+    }
+  )
   return result.result
 }
 
