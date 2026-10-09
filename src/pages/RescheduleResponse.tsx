@@ -7,6 +7,7 @@ import {
   respondToRescheduleProposalByCode,
   type PublicRescheduleProposal,
 } from '../lib/api'
+import { useAuth } from '../hooks/useAuth'
 
 function formatSlot(iso: string) {
   return new Date(iso).toLocaleString('en-PH', {
@@ -28,7 +29,12 @@ function answeredText(status: string) {
 
 export function RescheduleResponse() {
   const { token = '' } = useParams()
+  const { session } = useAuth()
   const isTokenFlow = Boolean(token)
+  const isPatient = session?.role === 'patient'
+  const returnAction = isPatient
+    ? { to: '/patient', label: 'Back to Patient Dashboard' }
+    : { to: '/login', label: 'Go to Login' }
   const [code, setCode] = useState('')
   const [verifiedCode, setVerifiedCode] = useState('')
   const [proposal, setProposal] = useState<PublicRescheduleProposal | null>(null)
@@ -182,11 +188,13 @@ export function RescheduleResponse() {
             <Result
               title="Your appointment has been successfully rescheduled."
               detail="Thank you for confirming your new schedule."
+              action={returnAction}
             />
           ) : done === 'declined' ? (
             <Result
               title="You declined the proposed schedule."
               detail="Your affected appointment has been cancelled. Please contact MHO Daraga if you would like to create another appointment."
+              action={returnAction}
             />
           ) : error ? (
             <Result title={error} detail="For assistance, please contact MHO Daraga." tone="warn" />
@@ -236,8 +244,8 @@ export function RescheduleResponse() {
           )}
         </div>
 
-        <Link to="/" className="mt-5 inline-flex text-sm font-medium text-emerald-700">
-          Back to MHO Daraga
+        <Link to={returnAction.to} className="mt-5 inline-flex text-sm font-medium text-emerald-700">
+          {returnAction.label}
         </Link>
       </section>
     </main>
@@ -256,16 +264,23 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function Result({
   title,
   detail,
+  action,
   tone = 'success',
 }: {
   title: string
   detail?: string
+  action?: { to: string; label: string }
   tone?: 'success' | 'warn'
 }) {
   return (
     <div className={tone === 'success' ? 'alert-success' : 'alert-warn'}>
       <p className="font-semibold">{title}</p>
       {detail && <p className="mt-1 text-sm">{detail}</p>}
+      {action && (
+        <Link to={action.to} className="btn-primary mt-4 inline-flex w-full justify-center sm:w-auto">
+          {action.label}
+        </Link>
+      )}
     </div>
   )
 }

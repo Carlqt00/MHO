@@ -1352,6 +1352,8 @@ export interface ExceptionConflict {
   slot_datetime: string
   status: string
   service_id: string // for the admin reschedule slot lookup (0021)
+  queue_status: 'waiting' | 'now_serving' | 'done' | null
+  emergency_reschedule_blocked?: boolean
 }
 
 // Active appointments that an exception on p_date would strand. The SAME
@@ -1872,6 +1874,93 @@ function uniqueCanonicalPhones(values: string[]): string[] {
   return phones
 }
 
+function profilePromotionError(error: unknown, fallback: string): Error {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  if (/ERR_CONTACT_NOT_FOUND/i.test(message)) {
+    return new Error('That additional contact is no longer available. Please refresh and try again.')
+  }
+  if (/ERR_SAME_EMAIL/i.test(message)) {
+    return new Error('This is already your default email.')
+  }
+  if (/ERR_SAME_PHONE/i.test(message)) {
+    return new Error('This is already your default cellphone number.')
+  }
+  if (/ERR_INVALID_EMAIL|valid email/i.test(message)) {
+    return new Error('Please enter a valid email address.')
+  }
+  if (/ERR_INVALID_PHONE|Philippine|cellphone|phone/i.test(message)) {
+    return new Error('Please enter a valid Philippine cellphone number.')
+  }
+  if (/already.*registered|already.*exists|duplicate|unique|User already registered/i.test(message)) {
+    return new Error('This email is already associated with another account.')
+  }
+  return new Error(fallback)
+}
+
+export async function promoteDefaultPhoneContact(phone: string): Promise<PatientProfile> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser()
+  const user = userData.user
+  if (userErr || !user) {
+    throw new Error('You need to be logged in to update your profile.')
+  }
+
+  const canonical = toCanonicalPhilippineMobile(phone)
+  if (!canonical) {
+    throw new Error('Please enter a valid Philippine cellphone number.')
+  }
+
+  const { error } = await supabase.rpc('promote_default_phone_contact', { p_phone: canonical })
+  if (error) {
+    throw profilePromotionError(error, 'Could not update your default cellphone number. Please try again.')
+  }
+
+  return fetchMyProfile(user.id)
+}
+
+export async function promoteDefaultEmailContact(
+  emailInput: string
+): Promise<UpdateMyProfileResult> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser()
+  const user = userData.user
+  if (userErr || !user) {
+    throw new Error('You need to be logged in to update your profile.')
+  }
+
+  const email = emailInput.trim().toLowerCase()
+  if (!email || !EMAIL_RE.test(email)) {
+    throw new Error('Please enter a valid email address.')
+  }
+
+  const currentAuthEmail = (user.email ?? '').trim().toLowerCase()
+  if (email === currentAuthEmail) {
+    throw new Error('This is already your default email.')
+  }
+
+  const currentProfile = await fetchMyProfile(user.id)
+  if (!currentProfile.additional_emails.some((additionalEmail) => additionalEmail.toLowerCase() === email)) {
+    throw new Error('That additional email is no longer available. Please refresh and try again.')
+  }
+
+  const { data: updateData, error: updateErr } = await supabase.auth.updateUser({ email })
+  if (updateErr) {
+    throw profilePromotionError(updateErr, 'Could not update your default email. Please try again or contact MHO.')
+  }
+
+  const updatedEmail = (updateData.user?.email ?? '').trim().toLowerCase()
+  const emailConfirmationRequired = updatedEmail !== email
+
+  if (emailConfirmationRequired) {
+    return { profile: await fetchMyProfile(user.id), emailConfirmationRequired }
+  }
+
+  const { error } = await supabase.rpc('promote_default_email_contact', { p_email: email })
+  if (error) {
+    throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
+  }
+
+  return { profile: await fetchMyProfile(user.id), emailConfirmationRequired: false }
+}
+
 export async function updateMyProfile(
   input: UpdateMyProfileInput
 ): Promise<UpdateMyProfileResult> {
@@ -1924,7 +2013,8 @@ export async function updateMyProfile(
   if (emailConfirmationRequired) {
     additionalEmails = uniqueNormalizedEmails([
       email,
-      ...additionalEmails.filter((additionalEmail) => additionalEmail !== currentAuthEmail),
+      ...additionalEmails,
+      ...(currentAuthEmail ? [currentAuthEmail] : []),
     ])
   } else {
     additionalEmails = additionalEmails.filter((additionalEmail) => additionalEmail !== email)

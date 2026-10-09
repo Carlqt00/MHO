@@ -763,6 +763,7 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
   const [date, setDate] = useState(todayManila())
   const [reason, setReason] = useState('Provider emergency')
   const [affected, setAffected] = useState<ExceptionConflict[]>([])
+  const [blockedAffected, setBlockedAffected] = useState<ExceptionConflict[]>([])
   const [assignments, setAssignments] = useState<Record<string, OpenSlot>>({})
   const [proposals, setProposals] = useState<AdminRescheduleProposal[]>([])
   const [busy, setBusy] = useState(false)
@@ -792,6 +793,9 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
     }
     if (/ERR_INVALID_STATUS/i.test(raw)) {
       return 'This appointment is no longer eligible for rescheduling.'
+    }
+    if (/ERR_NOW_SERVING/i.test(raw)) {
+      return 'One appointment is already being served and cannot be rescheduled through this workflow.'
     }
     if (/ERR_ALREADY_BOOKED/i.test(raw)) {
       return 'Selected slot is no longer available.'
@@ -825,17 +829,25 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
     setLoadToast(null)
     setReview(false)
     setAssignments({})
+    setBlockedAffected([])
     try {
       const rows = await fetchExceptionConflicts(providerId, date)
-      const bookedRows = rows.filter((row) => row.status === 'booked')
-      setAffected(bookedRows)
+      const actionableRows = rows.filter(
+        (row) =>
+          !row.emergency_reschedule_blocked &&
+          row.queue_status !== 'now_serving' &&
+          (row.status === 'booked' || row.status === 'checked_in')
+      )
+      const blockedRows = rows.filter((row) => row.emergency_reschedule_blocked || row.queue_status === 'now_serving')
+      setAffected(actionableRows)
+      setBlockedAffected(blockedRows)
       await loadMonitor()
       setLoadToast(
-        bookedRows.length > 0
+        actionableRows.length > 0
           ? {
               kind: 'success',
-              message: `${bookedRows.length} affected appointment${
-                bookedRows.length === 1 ? '' : 's'
+              message: `${actionableRows.length} affected appointment${
+                actionableRows.length === 1 ? '' : 's'
               } loaded successfully.`,
             }
           : {
@@ -889,6 +901,7 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
       }
       setReview(false)
       setAffected([])
+      setBlockedAffected([])
       setAssignments({})
       await loadMonitor()
     } catch (e) {
@@ -950,6 +963,7 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
               onChange={(e) => {
                 setProviderId(e.target.value)
                 setAffected([])
+                setBlockedAffected([])
                 setAssignments({})
                 setReview(false)
               }}
@@ -991,7 +1005,7 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
         {affected.length > 0 && !review && (
           <div className="mt-5 space-y-3">
             <p className="text-sm font-semibold text-slate-900">
-              {affected.length} booked appointment{affected.length === 1 ? '' : 's'} need proposals.
+              {affected.length} affected appointment{affected.length === 1 ? '' : 's'} need proposals.
             </p>
             <ul className="divide-y divide-slate-100">
               {affected.map((row) => (
@@ -1003,6 +1017,11 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
                         {row.service_name} · {formatSlotSample(row.slot_datetime)}
                       </p>
                       <p className="text-xs text-slate-400">Status: {row.status}</p>
+                      {row.status === 'checked_in' && (
+                        <p className="mt-1 text-xs font-medium text-sky-700">
+                          Checked in and waiting - patient must check in again if they agree.
+                        </p>
+                      )}
                     </div>
                     <EmergencySlotPicker
                       serviceId={row.service_id}
@@ -1038,6 +1057,26 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
             >
               Review assignments
             </button>
+          </div>
+        )}
+
+        {blockedAffected.length > 0 && !review && (
+          <div className="mt-5 rounded-xl border border-amber-100 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">Already being served</p>
+            <p className="mt-1 text-xs text-amber-800">
+              These appointments are active provider calls and are excluded from emergency reschedule proposals.
+            </p>
+            <ul className="mt-3 divide-y divide-amber-100">
+              {blockedAffected.map((row) => (
+                <li key={row.appointment_id} className="py-2 text-sm">
+                  <span className="font-medium text-slate-900">{row.patient_name}</span>
+                  <span className="text-slate-600">
+                    {' '}
+                    · {row.service_name} · {formatSlotSample(row.slot_datetime)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

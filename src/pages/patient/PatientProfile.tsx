@@ -6,6 +6,8 @@ import { useAuth } from '../../hooks/useAuth'
 import {
   fetchMyProfile,
   fetchMyAppointmentHistory,
+  promoteDefaultEmailContact,
+  promoteDefaultPhoneContact,
   updateMyProfile,
   type PatientProfile as PatientProfileData,
   type Appointment,
@@ -65,30 +67,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
 type ContactPromotion = { type: 'email' | 'phone'; value: string } | null
 
-function uniqueEmails(values: string[]): string[] {
-  const seen = new Set<string>()
-  const result: string[] = []
-  for (const value of values) {
-    const normalized = value.trim().toLowerCase()
-    if (!normalized || seen.has(normalized)) continue
-    seen.add(normalized)
-    result.push(normalized)
-  }
-  return result
-}
-
-function uniquePhones(values: string[]): string[] {
-  const result: string[] = []
-  for (const value of values) {
-    const canonical = toCanonicalPhilippineMobile(value)
-    if (!canonical || result.includes(canonical)) continue
-    result.push(canonical)
-  }
-  return result
-}
-
 function profileUpdateErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
+  if (/no longer available|refresh and try again/i.test(message)) {
+    return message
+  }
   if (/additional email must be different|duplicate|unique/i.test(message)) {
     return 'That contact is already saved. Please use a different email or number.'
   }
@@ -216,44 +199,40 @@ export function PatientProfile() {
     setNewAdditionalPhone('')
   }
 
-  const promoteAdditionalEmail = (email: string) => {
-    const promotedEmail = email.trim().toLowerCase()
-    const currentPrimaryEmail = editEmail.trim().toLowerCase()
-    setEditEmail(promotedEmail)
-    setAdditionalEmails(
-      uniqueEmails([
-        ...(currentPrimaryEmail ? [currentPrimaryEmail] : []),
-        ...additionalEmails.filter((savedEmail) => savedEmail.toLowerCase() !== promotedEmail),
-      ])
-    )
-    setEditError('')
+  const applyProfileState = (nextProfile: PatientProfileData) => {
+    setProfile(nextProfile)
+    setEditEmail(nextProfile.email ?? '')
+    setEditPhone(profilePhoneSubscriber(nextProfile))
+    setAdditionalEmails(nextProfile.additional_emails)
+    setAdditionalPhones(nextProfile.additional_phones)
   }
 
-  const promoteAdditionalPhone = (phone: string) => {
-    const promotedPhone = toCanonicalPhilippineMobile(phone)
-    const currentPrimaryPhone = toCanonicalPhilippineMobile(editPhone)
-    if (!promotedPhone) {
-      setEditError('Please enter a valid Philippine cellphone number.')
-      return
-    }
-    setEditPhone(normalizePhilippineMobileSubscriber(promotedPhone))
-    setAdditionalPhones(
-      uniquePhones([
-        ...(currentPrimaryPhone ? [currentPrimaryPhone] : []),
-        ...additionalPhones.filter((savedPhone) => savedPhone !== promotedPhone),
-      ])
-    )
-    setEditError('')
-  }
-
-  const confirmPromotion = () => {
+  const confirmPromotion = async () => {
     if (!promotion) return
-    if (promotion.type === 'email') {
-      promoteAdditionalEmail(promotion.value)
-    } else {
-      promoteAdditionalPhone(promotion.value)
+    setSaving(true)
+    setEditError('')
+    setNotice('')
+    try {
+      if (promotion.type === 'email') {
+        const result = await promoteDefaultEmailContact(promotion.value)
+        applyProfileState(result.profile)
+        await refreshSession()
+        setNotice(
+          result.emailConfirmationRequired
+            ? 'Confirmation is required before this email becomes your default email. Please check your inbox.'
+            : 'Default email updated successfully.'
+        )
+      } else {
+        const nextProfile = await promoteDefaultPhoneContact(promotion.value)
+        applyProfileState(nextProfile)
+        setNotice('Default cellphone number updated successfully.')
+      }
+      setPromotion(null)
+    } catch (e) {
+      setEditError(profileUpdateErrorMessage(e))
+    } finally {
+      setSaving(false)
     }
-    setPromotion(null)
   }
 
   const validatePasswordChange = () => {
@@ -373,13 +352,14 @@ export function PatientProfile() {
             </h2>
             <p className="mt-2 text-sm text-slate-500">
               {promotion.type === 'email'
-                ? 'This will also become your login email after the change is saved and confirmed if required.'
-                : 'Future SMS notifications will be sent to this number after the change is saved.'}
+                ? 'This will also become your login email.'
+                : 'Future SMS notifications will be sent to this number.'}
             </p>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={() => setPromotion(null)}
+                disabled={saving}
                 className="btn-secondary min-h-10 w-full px-4 py-2 sm:w-auto"
               >
                 Cancel
@@ -387,9 +367,10 @@ export function PatientProfile() {
               <button
                 type="button"
                 onClick={confirmPromotion}
+                disabled={saving}
                 className="btn-primary min-h-10 w-full px-4 py-2 sm:w-auto"
               >
-                Set as Default
+                {saving ? 'Updating...' : 'Set as Default'}
               </button>
             </div>
           </div>
