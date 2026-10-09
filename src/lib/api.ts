@@ -427,15 +427,24 @@ async function callRescheduleProposalFunction<T>(body: Record<string, unknown>):
         headers: {
           'Content-Type': 'application/json',
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify(body),
       }
     )
-    const parsed = (await response.json().catch(() => null)) as { error?: string } | T | null
+    const parsed = (await response.json().catch(() => null)) as
+      | { error?: string; message?: string }
+      | T
+      | null
     if (!response.ok) {
       const message =
         parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string'
           ? parsed.error
+          : parsed &&
+              typeof parsed === 'object' &&
+              'message' in parsed &&
+              typeof parsed.message === 'string'
+            ? parsed.message
           : GENERIC_ERR
       throw new Error(message)
     }
