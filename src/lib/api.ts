@@ -1952,6 +1952,26 @@ function logDefaultEmailPromotionState(stage: string, details: Record<string, st
   console.info('[default-email-promotion]', { stage, ...details })
 }
 
+async function callAuthenticatedFunction<T>(name: string, body: object): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, {
+    body: body as Record<string, unknown>,
+  })
+  if (error) {
+    let message = ''
+    const context = (error as { context?: unknown }).context
+    if (context instanceof Response) {
+      try {
+        const parsed = await context.json()
+        if (parsed && typeof parsed.error === 'string') message = parsed.error
+      } catch {
+        // Keep the safe generic fallback below.
+      }
+    }
+    throw new Error(message || errorMessage(error, GENERIC_ERR))
+  }
+  return data as T
+}
+
 export async function promoteDefaultPhoneContact(phone: string): Promise<PatientProfile> {
   const { data: userData, error: userErr } = await supabase.auth.getUser()
   const user = userData.user
@@ -2035,24 +2055,9 @@ export async function promoteDefaultEmailContact(
     throw new Error('Default email promotion payload mismatch')
   }
 
-  const { data: updateData, error: updateErr } = await supabase.auth.updateUser(updatePayload)
-  if (updateErr) {
-    logDefaultEmailPromotionFailure('auth.updateUser', updateErr)
-    throw profilePromotionError(updateErr, 'Could not update your default email. Please try again or contact MHO.')
-  }
-
-  const updatedEmail = (updateData.user?.email ?? '').trim().toLowerCase()
-  const emailConfirmationRequired = updatedEmail !== normalizedSelectedEmail
-
-  if (emailConfirmationRequired) {
-    return { profile: await fetchMyProfile(user.id), emailConfirmationRequired }
-  }
-
-  const { error } = await supabase.rpc('promote_default_email_contact', { p_email: normalizedSelectedEmail })
-  if (error) {
-    logDefaultEmailPromotionFailure('rpc.promote_default_email_contact', error)
-    throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
-  }
+  await callAuthenticatedFunction<{ success: boolean }>('promote-default-email', {
+    selected_email: updatePayload.email,
+  })
 
   return { profile: await fetchMyProfile(user.id), emailConfirmationRequired: false }
 }
