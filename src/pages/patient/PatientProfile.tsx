@@ -65,7 +65,7 @@ function profilePhoneSubscriber(profile: PatientProfileData | null): string {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
-type ContactPromotion = { type: 'email' | 'phone'; value: string } | null
+type ContactPromotionTarget = { type: 'email' | 'phone'; value: string } | null
 
 function profileUpdateErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
@@ -124,7 +124,7 @@ export function PatientProfile() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [editError, setEditError] = useState('')
-  const [promotion, setPromotion] = useState<ContactPromotion>(null)
+  const [promotionTarget, setPromotionTarget] = useState<ContactPromotionTarget>(null)
 
   useEffect(() => {
     if (!userId) return
@@ -157,7 +157,7 @@ export function PatientProfile() {
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
-    setPromotion(null)
+    setPromotionTarget(null)
     setEditMode(true)
   }
 
@@ -173,7 +173,7 @@ export function PatientProfile() {
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
-    setPromotion(null)
+    setPromotionTarget(null)
     setEditMode(false)
   }
 
@@ -222,25 +222,47 @@ export function PatientProfile() {
     setAdditionalPhones(nextProfile.additional_phones)
   }
 
-  const openPromotion = (nextPromotion: NonNullable<ContactPromotion>) => {
+  const openEmailPromotionTarget = (rowValue: string) => {
+    const targetValue = rowValue.trim().toLowerCase()
+    console.info('[default-email-promotion]', {
+      stage: 'row-click',
+      rowValue: targetValue,
+    })
     setEditError('')
     setNotice('')
-    setPromotion(nextPromotion)
+    setPromotionTarget({ type: 'email', value: targetValue })
+    console.info('[default-email-promotion]', {
+      stage: 'modal-open',
+      targetValue,
+    })
+  }
+
+  const openPhonePromotionTarget = (rowValue: string) => {
+    setEditError('')
+    setNotice('')
+    setPromotionTarget({ type: 'phone', value: rowValue })
   }
 
   const confirmPromotion = async () => {
-    if (!promotion) return
+    if (!promotionTarget) return
     setSaving(true)
     setEditError('')
     setNotice('')
     try {
-      if (promotion.type === 'email') {
+      if (promotionTarget.type === 'email') {
+        const currentPrimary = (profile?.email ?? '').trim().toLowerCase()
+        const selectedEmail = promotionTarget.value.trim().toLowerCase()
         console.info('[default-email-promotion]', {
           stage: 'confirm-promotion',
-          currentPrimary: (profile?.email ?? '').trim().toLowerCase(),
-          selectedEmail: promotion.value.trim().toLowerCase(),
+          currentPrimary,
+          selectedEmail,
         })
-        const result = await promoteDefaultEmailContact(promotion.value)
+        if (selectedEmail === currentPrimary) {
+          setNotice('This email is already your default email.')
+          setPromotionTarget(null)
+          return
+        }
+        const result = await promoteDefaultEmailContact(selectedEmail)
         applyProfileState(result.profile)
         await refreshSession()
         setEditError('')
@@ -252,12 +274,12 @@ export function PatientProfile() {
             : 'Default email updated successfully.'
         )
       } else {
-        const nextProfile = await promoteDefaultPhoneContact(promotion.value)
+        const nextProfile = await promoteDefaultPhoneContact(promotionTarget.value)
         applyProfileState(nextProfile)
         setEditError('')
         setNotice('Default cellphone number updated successfully.')
       }
-      setPromotion(null)
+      setPromotionTarget(null)
     } catch (e) {
       setEditError(profileUpdateErrorMessage(e))
     } finally {
@@ -367,7 +389,7 @@ export function PatientProfile() {
         <div className="alert-success mb-4" role="status">{notice}</div>
       )}
 
-      {promotion && (
+      {promotionTarget && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4 py-6"
           role="dialog"
@@ -376,19 +398,19 @@ export function PatientProfile() {
         >
           <div className="w-full max-w-md rounded-2xl border border-emerald-100 bg-white p-5 shadow-xl shadow-slate-950/15">
             <h2 id="profile-promotion-title" className="text-base font-semibold text-slate-900">
-              {promotion.type === 'email'
-                ? `Set ${promotion.value} as your default email?`
-                : `Set ${promotion.value} as your default cellphone number?`}
+              {promotionTarget.type === 'email'
+                ? `Set ${promotionTarget.value} as your default email?`
+                : `Set ${promotionTarget.value} as your default cellphone number?`}
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              {promotion.type === 'email'
+              {promotionTarget.type === 'email'
                 ? 'This will also become your login email.'
                 : 'Future SMS notifications will be sent to this number.'}
             </p>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => setPromotion(null)}
+                onClick={() => setPromotionTarget(null)}
                 disabled={saving}
                 className="btn-secondary min-h-10 w-full px-4 py-2 sm:w-auto"
               >
@@ -484,7 +506,7 @@ export function PatientProfile() {
                             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                               <button
                                 type="button"
-                                onClick={() => openPromotion({ type: 'email', value: email })}
+                                onClick={() => openEmailPromotionTarget(email)}
                                 disabled={saving}
                                 className="min-h-8 rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                               >
@@ -571,7 +593,7 @@ export function PatientProfile() {
                             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                               <button
                                 type="button"
-                                onClick={() => openPromotion({ type: 'phone', value: phone })}
+                                onClick={() => openPhonePromotionTarget(phone)}
                                 disabled={saving}
                                 className="min-h-8 rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                               >
