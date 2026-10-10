@@ -16,6 +16,7 @@ export interface Service {
 export interface OpenSlot {
   id: string
   slot_datetime: string
+  duration_minutes: number
   providers: {
     id: string
     specialization: string | null
@@ -108,7 +109,7 @@ export async function fetchOpenSlots(serviceId: string, manilaDate?: string): Pr
     .from('open_slots')
     .select(
       `
-      id, slot_datetime,
+      id, slot_datetime, duration_minutes,
       providers!inner ( id, specialization, profiles!inner ( full_name ) ),
       services!inner ( id, name )
     `
@@ -171,27 +172,30 @@ export interface ActiveBooking {
   id: string
   service_id: string
   slot_datetime: string
+  duration_minutes: number
 }
 
-// The caller's own active (non-cancelled) bookings, for client-side conflict
+// The caller's own active bookings, for client-side conflict
 // pre-checks before submit. RLS scopes this to the current patient.
 export async function fetchMyActiveBookings(): Promise<ActiveBooking[]> {
   const { data, error } = await supabase
     .from('appointments')
-    .select('id, service_id, time_slots!inner ( slot_datetime )')
-    .not('status', 'eq', 'cancelled')
+    .select('id, service_id, appointment_duration_minutes, time_slots!inner ( slot_datetime )')
+    .in('status', ['booked', 'checked_in'])
 
   if (error) throw new Error(errorMessage(error, GENERIC_ERR))
   return (
     (data ?? []) as unknown as {
       id: string
       service_id: string
+      appointment_duration_minutes: number
       time_slots: { slot_datetime: string }
     }[]
   ).map((row) => ({
     id: row.id,
     service_id: row.service_id,
     slot_datetime: row.time_slots.slot_datetime,
+    duration_minutes: row.appointment_duration_minutes,
   }))
 }
 
@@ -213,6 +217,11 @@ export async function bookAppointment(slotId: string): Promise<BookingResult> {
     }
     if (raw.includes('ERR_SERVICE_FULL')) {
       throw new Error('No slots remaining for this service on the selected date.')
+    }
+    if (raw.includes('ERR_PATIENT_OVERLAP')) {
+      throw new Error(
+        'You already have another appointment that overlaps with this time. Please choose a different time.'
+      )
     }
     throw new Error(errorMessage(error, GENERIC_ERR))
   }
@@ -290,6 +299,10 @@ export async function rescheduleAppointment(
       throw new Error('Lipas na ang oras na ito. / That time has already passed.')
     if (raw.includes('ERR_SAME_SLOT'))
       throw new Error('Ito na ang kasalukuyang oras ng appointment. / That is already the current time.')
+    if (raw.includes('ERR_PATIENT_OVERLAP'))
+      throw new Error(
+        'You already have another appointment that overlaps with this time. Please choose a different time.'
+      )
     if (raw.includes('ERR_FORBIDDEN'))
       throw new Error(
         'Wala kang pahintulot na ilipat ang appointment na ito. / You are not allowed to reschedule this appointment.'

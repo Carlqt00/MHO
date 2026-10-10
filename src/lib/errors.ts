@@ -19,6 +19,10 @@ const CONSTRAINT_MESSAGES: Array<[RegExp, string]> = [
     /uniq_active_time_per_patient/i,
     'May booking ka na sa oras na ito. Pumili ng ibang oras. / You already have a booking at this time.',
   ],
+  [
+    /no_patient_active_appointment_overlap/i,
+    'You already have another appointment that overlaps with this time. Please choose a different time.',
+  ],
 ]
 
 // Raw Postgres / RLS internals that must never reach an end user. Specific,

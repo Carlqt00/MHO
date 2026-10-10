@@ -11,6 +11,7 @@ import { errorMessage } from '../lib/errors'
 import { StatusBadge } from './AdminPrimitives'
 
 type ScannerStep = 'scanning' | 'detected' | 'success'
+type BlockReason = { message: string; tone: 'error' | 'success' }
 
 interface CameraDevice {
   id: string
@@ -56,20 +57,23 @@ function extractToken(value: string): string | null {
   return /^[A-Za-z0-9_-]{8,}$/.test(trimmed) ? trimmed : null
 }
 
-function checkBlockReason(ticket: ScannedQueueTicket): string | null {
+function checkBlockReason(ticket: ScannedQueueTicket): BlockReason | null {
   const appointment = ticket.appointments
   const appointmentDay = manilaDateKey(appointment.appointment_at)
   const today = todayManilaDateKey()
 
   if (appointmentDay !== today) {
-    return `This appointment is scheduled for ${formatAppointment(appointment.appointment_at)}. Check-in is only available on the appointment date.`
+    return {
+      message: `This appointment is scheduled for ${formatAppointment(appointment.appointment_at)}. Check-in will be available on the appointment date.`,
+      tone: 'success',
+    }
   }
-  if (appointment.status === 'checked_in') return 'Patient is already checked in.'
-  if (appointment.status === 'cancelled') return 'This appointment has been cancelled.'
-  if (appointment.status === 'served') return 'This appointment has already been completed.'
-  if (appointment.status === 'no_show') return 'This appointment was already marked as no-show.'
-  if (appointment.status !== 'booked') return 'This appointment cannot be checked in.'
-  if (ticket.status === 'done') return 'This queue ticket is already closed.'
+  if (appointment.status === 'checked_in') return { message: 'Patient is already checked in.', tone: 'error' }
+  if (appointment.status === 'cancelled') return { message: 'This appointment has been cancelled.', tone: 'error' }
+  if (appointment.status === 'served') return { message: 'This appointment has already been completed.', tone: 'error' }
+  if (appointment.status === 'no_show') return { message: 'This appointment was already marked as no-show.', tone: 'error' }
+  if (appointment.status !== 'booked') return { message: 'This appointment cannot be checked in.', tone: 'error' }
+  if (ticket.status === 'done') return { message: 'This queue ticket is already closed.', tone: 'error' }
 
   return null
 }
@@ -231,7 +235,7 @@ export function QrCheckinScanner({ onClose, onCheckedIn }: QrCheckinScannerProps
     if (!ticket) return
     const blockReason = checkBlockReason(ticket)
     if (blockReason) {
-      setScanError(blockReason)
+      setScanError(blockReason.message)
       return
     }
 
@@ -345,7 +349,9 @@ export function QrCheckinScanner({ onClose, onCheckedIn }: QrCheckinScannerProps
             )}
 
             {(scanError || blockReason) && (
-              <div className="alert-error">{scanError || blockReason}</div>
+              <div className={scanError ? 'alert-error' : blockReason?.tone === 'success' ? 'alert-success' : 'alert-error'}>
+                {scanError || blockReason?.message}
+              </div>
             )}
 
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

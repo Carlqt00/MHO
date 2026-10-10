@@ -38,9 +38,24 @@ function slotTime(iso: string) {
   })
 }
 
-// Manila calendar date ('YYYY-MM-DD') of an instant. en-CA gives ISO order.
-function manilaDateOf(iso: string) {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+const OVERLAP_MESSAGE =
+  'You already have another appointment that overlaps with this time. Please choose a different time.'
+
+function intervalEnd(iso: string, durationMinutes: number) {
+  return new Date(iso).getTime() + durationMinutes * 60_000
+}
+
+function intervalsOverlap(
+  startIso: string,
+  durationMinutes: number,
+  existingStartIso: string,
+  existingDurationMinutes: number
+) {
+  const start = new Date(startIso).getTime()
+  const end = intervalEnd(startIso, durationMinutes)
+  const existingStart = new Date(existingStartIso).getTime()
+  const existingEnd = intervalEnd(existingStartIso, existingDurationMinutes)
+  return start < existingEnd && existingStart < end
 }
 
 // Long, readable label for a 'YYYY-MM-DD' Manila date.
@@ -217,8 +232,11 @@ export function BookAppointment() {
     try {
       const data = await fetchOpenSlots(selectedService!.id, dateStr)
       setSlots(data)
-      if (data.length === 0)
+      if (data.length > 0 && data.every((slot) => slotHasPatientOverlap(slot))) {
+        setError(OVERLAP_MESSAGE)
+      } else if (data.length === 0) {
         setError('No available times remain on this date. Choose another date.')
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -227,29 +245,31 @@ export function BookAppointment() {
   }
 
   const handleSelectSlot = (slot: OpenSlot) => {
+    if (slotHasPatientOverlap(slot)) {
+      setError(OVERLAP_MESSAGE)
+      return
+    }
     setSelectedSlot(slot)
     setError('')
     setStep(4)
   }
 
-  // Pre-submit conflict checks — mirror the DB guards in 0011 so the patient
-  // sees the conflict before hitting the database. When rescheduling, the
+  // Pre-submit conflict check mirrors the database overlap rule. When rescheduling, the
   // appointment being moved is not a conflict with itself.
   const otherBookings = rescheduleId
     ? activeBookings.filter((b) => b.id !== rescheduleId)
     : activeBookings
-  const conflictSameServiceDate =
-    !!selectedService &&
-    !!selectedDate &&
-    otherBookings.some(
-      (b) => b.service_id === selectedService.id && manilaDateOf(b.slot_datetime) === selectedDate
+  const slotHasPatientOverlap = (slot: OpenSlot) =>
+    otherBookings.some((booking) =>
+      intervalsOverlap(
+        slot.slot_datetime,
+        slot.duration_minutes,
+        booking.slot_datetime,
+        booking.duration_minutes
+      )
     )
-  const conflictSameTime =
-    !!selectedSlot &&
-    otherBookings.some(
-      (b) => new Date(b.slot_datetime).getTime() === new Date(selectedSlot.slot_datetime).getTime()
-    )
-  const hasConflict = conflictSameServiceDate || conflictSameTime
+  const hasConflict = !!selectedSlot && slotHasPatientOverlap(selectedSlot)
+  const visibleSlots = slots.filter((slot) => !slotHasPatientOverlap(slot))
 
   const handleConfirm = async () => {
     if (!selectedSlot || hasConflict) return
@@ -547,9 +567,11 @@ export function BookAppointment() {
 
           {slotsLoading ? (
             <p className="text-slate-400">Finding available times…</p>
+          ) : visibleSlots.length === 0 && slots.length > 0 ? (
+            <div className="alert-warn">{OVERLAP_MESSAGE}</div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-2">
-              {slots.map((slot) => (
+              {visibleSlots.map((slot) => (
                 <button
                   key={slot.id}
                   onClick={() => handleSelectSlot(slot)}
@@ -581,9 +603,7 @@ export function BookAppointment() {
               className="alert-warn mt-4"
               role="alert"
             >
-              {conflictSameServiceDate
-                ? 'You already have a booking for this service on this date. Choose another date or service.'
-                : 'You already have a booking at this time. Choose another time.'}
+              {OVERLAP_MESSAGE}
             </div>
           )}
 
