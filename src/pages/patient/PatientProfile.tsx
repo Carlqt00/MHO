@@ -235,6 +235,11 @@ export function PatientProfile() {
     setNotice('')
     try {
       if (promotion.type === 'email') {
+        console.info('[default-email-promotion]', {
+          stage: 'confirm-promotion',
+          currentPrimary: (profile?.email ?? '').trim().toLowerCase(),
+          selectedEmail: promotion.value.trim().toLowerCase(),
+        })
         const result = await promoteDefaultEmailContact(promotion.value)
         applyProfileState(result.profile)
         await refreshSession()

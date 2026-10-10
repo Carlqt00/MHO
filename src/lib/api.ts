@@ -1940,6 +1940,10 @@ function logDefaultEmailPromotionFailure(stage: string, error: unknown) {
   })
 }
 
+function logDefaultEmailPromotionState(stage: string, details: Record<string, string | boolean>) {
+  console.info('[default-email-promotion]', { stage, ...details })
+}
+
 export async function promoteDefaultPhoneContact(phone: string): Promise<PatientProfile> {
   const { data: userData, error: userErr } = await supabase.auth.getUser()
   const user = userData.user
@@ -1961,7 +1965,7 @@ export async function promoteDefaultPhoneContact(phone: string): Promise<Patient
 }
 
 export async function promoteDefaultEmailContact(
-  emailInput: string
+  selectedEmailInput: string
 ): Promise<UpdateMyProfileResult> {
   const { data: userData, error: userErr } = await supabase.auth.getUser()
   const user = userData.user
@@ -1970,21 +1974,21 @@ export async function promoteDefaultEmailContact(
     throw new Error('You need to be logged in to update your profile.')
   }
 
-  const email = emailInput.trim().toLowerCase()
-  if (!email || !EMAIL_RE.test(email)) {
+  const selectedEmail = selectedEmailInput.trim().toLowerCase()
+  if (!selectedEmail || !EMAIL_RE.test(selectedEmail)) {
     throw new Error('Please enter a valid email address.')
   }
 
   const currentProfile = await fetchMyProfile(user.id)
-  const currentProfileEmail = (currentProfile.email ?? '').trim().toLowerCase()
+  const currentPrimary = (currentProfile.email ?? '').trim().toLowerCase()
 
-  if (email === currentProfileEmail) {
+  if (selectedEmail === currentPrimary) {
     const { error } = await supabase
       .from('profile_contacts')
       .delete()
       .eq('profile_id', user.id)
       .eq('contact_type', 'email')
-      .eq('contact_value', email)
+      .eq('contact_value', selectedEmail)
 
     if (error) {
       logDefaultEmailPromotionFailure('profile_contacts.cleanup_already_default', error)
@@ -1998,24 +2002,32 @@ export async function promoteDefaultEmailContact(
     }
   }
 
-  if (!currentProfile.additional_emails.some((additionalEmail) => additionalEmail.toLowerCase() === email)) {
+  if (!currentProfile.additional_emails.some((additionalEmail) => additionalEmail.toLowerCase() === selectedEmail)) {
     throw new Error('That additional email is no longer available. Please refresh and try again.')
   }
 
-  const { data: updateData, error: updateErr } = await supabase.auth.updateUser({ email })
+  const updatePayload = { email: selectedEmail }
+  logDefaultEmailPromotionState('before-auth-update', {
+    currentPrimary,
+    selectedEmail,
+    updateUserEmail: updatePayload.email,
+    payloadMatchesSelected: updatePayload.email === selectedEmail,
+  })
+
+  const { data: updateData, error: updateErr } = await supabase.auth.updateUser(updatePayload)
   if (updateErr) {
     logDefaultEmailPromotionFailure('auth.updateUser', updateErr)
     throw profilePromotionError(updateErr, 'Could not update your default email. Please try again or contact MHO.')
   }
 
   const updatedEmail = (updateData.user?.email ?? '').trim().toLowerCase()
-  const emailConfirmationRequired = updatedEmail !== email
+  const emailConfirmationRequired = updatedEmail !== selectedEmail
 
   if (emailConfirmationRequired) {
     return { profile: await fetchMyProfile(user.id), emailConfirmationRequired }
   }
 
-  const { error } = await supabase.rpc('promote_default_email_contact', { p_email: email })
+  const { error } = await supabase.rpc('promote_default_email_contact', { p_email: selectedEmail })
   if (error) {
     logDefaultEmailPromotionFailure('rpc.promote_default_email_contact', error)
     throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
