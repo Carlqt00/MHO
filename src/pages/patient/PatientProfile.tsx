@@ -78,6 +78,12 @@ function profileUpdateErrorMessage(error: unknown): string {
   if (/valid additional email|valid email/i.test(message)) {
     return 'Please enter a valid email address.'
   }
+  if (/already associated with another account/i.test(message)) {
+    return 'This email is already associated with another account.'
+  }
+  if (/confirm the new email|confirmation required|email confirmation/i.test(message)) {
+    return 'Please confirm the new email before it becomes your default login email.'
+  }
   if (/philippine|cellphone|phone/i.test(message)) {
     return 'Please enter a valid Philippine cellphone number.'
   }
@@ -219,7 +225,7 @@ export function PatientProfile() {
         await refreshSession()
         setNotice(
           result.emailConfirmationRequired
-            ? 'Confirmation is required before this email becomes your default email. Please check your inbox.'
+            ? 'Please confirm the new email before it becomes your default login email.'
             : 'Default email updated successfully.'
         )
       } else {

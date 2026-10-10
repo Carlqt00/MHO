@@ -1888,7 +1888,15 @@ function uniqueCanonicalPhones(values: string[]): string[] {
 }
 
 function profilePromotionError(error: unknown, fallback: string): Error {
+  const obj = error && typeof error === 'object' ? (error as Record<string, unknown>) : null
+  const code = typeof obj?.code === 'string' ? obj.code : ''
   const message = error instanceof Error ? error.message : String(error ?? '')
+  if (
+    code === 'email_exists' ||
+    /already.*registered|already.*exists|duplicate|unique|User already registered/i.test(message)
+  ) {
+    return new Error('This email is already associated with another account.')
+  }
   if (/ERR_CONTACT_NOT_FOUND/i.test(message)) {
     return new Error('That additional contact is no longer available. Please refresh and try again.')
   }
@@ -1903,9 +1911,6 @@ function profilePromotionError(error: unknown, fallback: string): Error {
   }
   if (/ERR_INVALID_PHONE|Philippine|cellphone|phone/i.test(message)) {
     return new Error('Please enter a valid Philippine cellphone number.')
-  }
-  if (/already.*registered|already.*exists|duplicate|unique|User already registered/i.test(message)) {
-    return new Error('This email is already associated with another account.')
   }
   return new Error(fallback)
 }
