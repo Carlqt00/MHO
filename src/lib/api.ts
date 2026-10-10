@@ -1869,9 +1869,14 @@ export interface UpdateMyProfileResult {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const INVISIBLE_EMAIL_WHITESPACE_RE = /[\u200B-\u200D\uFEFF]/g
 
 function uniqueNormalizedEmails(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)))
+}
+
+function normalizeEmailForAuth(value: string): string {
+  return value.replace(INVISIBLE_EMAIL_WHITESPACE_RE, '').trim().toLowerCase()
 }
 
 function uniqueCanonicalPhones(values: string[]): string[] {
@@ -1893,6 +1898,9 @@ function profilePromotionError(error: unknown, fallback: string): Error {
   const code = typeof obj?.code === 'string' ? obj.code : ''
   const status = typeof obj?.status === 'number' ? obj.status : 0
   const message = error instanceof Error ? error.message : String(error ?? '')
+  if (code === 'email_address_invalid') {
+    return new Error('The selected email address is not valid. Please remove it and add the email again.')
+  }
   if (
     status === 429 ||
     /rate.?limit|too many|only request this after|over_.*rate_limit/i.test(`${code} ${message}`)
@@ -1974,21 +1982,26 @@ export async function promoteDefaultEmailContact(
     throw new Error('You need to be logged in to update your profile.')
   }
 
-  const selectedEmail = selectedEmailInput.trim().toLowerCase()
-  if (!selectedEmail || !EMAIL_RE.test(selectedEmail)) {
+  const normalizedSelectedEmail = normalizeEmailForAuth(selectedEmailInput)
+  logDefaultEmailPromotionState('normalize-selected-email', {
+    selectedEmailLength: String(selectedEmailInput.length),
+    normalizedSelectedEmailLength: String(normalizedSelectedEmail.length),
+    normalizedSelectedEmailJson: JSON.stringify(normalizedSelectedEmail),
+  })
+  if (!normalizedSelectedEmail || !EMAIL_RE.test(normalizedSelectedEmail)) {
     throw new Error('Please enter a valid email address.')
   }
 
   const currentProfile = await fetchMyProfile(user.id)
   const currentPrimary = (currentProfile.email ?? '').trim().toLowerCase()
 
-  if (selectedEmail === currentPrimary) {
+  if (normalizedSelectedEmail === currentPrimary) {
     const { error } = await supabase
       .from('profile_contacts')
       .delete()
       .eq('profile_id', user.id)
       .eq('contact_type', 'email')
-      .eq('contact_value', selectedEmail)
+      .eq('contact_value', normalizedSelectedEmail)
 
     if (error) {
       logDefaultEmailPromotionFailure('profile_contacts.cleanup_already_default', error)
@@ -2002,17 +2015,25 @@ export async function promoteDefaultEmailContact(
     }
   }
 
-  if (!currentProfile.additional_emails.some((additionalEmail) => additionalEmail.toLowerCase() === selectedEmail)) {
+  if (
+    !currentProfile.additional_emails.some(
+      (additionalEmail) => normalizeEmailForAuth(additionalEmail) === normalizedSelectedEmail
+    )
+  ) {
     throw new Error('That additional email is no longer available. Please refresh and try again.')
   }
 
-  const updatePayload = { email: selectedEmail }
+  const updatePayload = { email: normalizedSelectedEmail }
   logDefaultEmailPromotionState('before-auth-update', {
     currentPrimary,
-    selectedEmail,
+    selectedEmail: normalizedSelectedEmail,
+    normalizedSelectedEmail,
     updateUserEmail: updatePayload.email,
-    payloadMatchesSelected: updatePayload.email === selectedEmail,
+    payloadMatchesSelected: updatePayload.email === normalizedSelectedEmail,
   })
+  if (updatePayload.email !== normalizedSelectedEmail) {
+    throw new Error('Default email promotion payload mismatch')
+  }
 
   const { data: updateData, error: updateErr } = await supabase.auth.updateUser(updatePayload)
   if (updateErr) {
@@ -2021,13 +2042,13 @@ export async function promoteDefaultEmailContact(
   }
 
   const updatedEmail = (updateData.user?.email ?? '').trim().toLowerCase()
-  const emailConfirmationRequired = updatedEmail !== selectedEmail
+  const emailConfirmationRequired = updatedEmail !== normalizedSelectedEmail
 
   if (emailConfirmationRequired) {
     return { profile: await fetchMyProfile(user.id), emailConfirmationRequired }
   }
 
-  const { error } = await supabase.rpc('promote_default_email_contact', { p_email: selectedEmail })
+  const { error } = await supabase.rpc('promote_default_email_contact', { p_email: normalizedSelectedEmail })
   if (error) {
     logDefaultEmailPromotionFailure('rpc.promote_default_email_contact', error)
     throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')

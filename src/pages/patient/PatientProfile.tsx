@@ -67,6 +67,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
 type ContactPromotionTarget = { type: 'email' | 'phone'; value: string } | null
 
+function hasDisallowedEmailCharacters(value: string): boolean {
+  return Array.from(value).some((char) => {
+    const code = char.charCodeAt(0)
+    return code <= 31 || code === 127 || (code >= 0x200B && code <= 0x200D) || code === 0xFEFF
+  })
+}
+
 function profileUpdateErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
   if (/no longer available|refresh and try again/i.test(message)) {
@@ -77,6 +84,9 @@ function profileUpdateErrorMessage(error: unknown): string {
   }
   if (/valid additional email|valid email/i.test(message)) {
     return 'Please enter a valid email address.'
+  }
+  if (/selected email address is not valid/i.test(message)) {
+    return 'The selected email address is not valid. Please remove it and add the email again.'
   }
   if (/already your default email/i.test(message)) {
     return 'This email is already your default email.'
@@ -181,6 +191,10 @@ export function PatientProfile() {
     const normalized = newAdditionalEmail.trim().toLowerCase()
     setEditError('')
     if (!normalized) return
+    if (hasDisallowedEmailCharacters(newAdditionalEmail)) {
+      setEditError('Please remove hidden or invalid characters from the email address.')
+      return
+    }
     if (!EMAIL_RE.test(normalized)) {
       setEditError('Please enter a valid additional email address.')
       return
