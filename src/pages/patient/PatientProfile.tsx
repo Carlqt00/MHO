@@ -87,6 +87,12 @@ function profileUpdateErrorMessage(error: unknown): string {
   if (/confirm the new email|confirmation required|email confirmation/i.test(message)) {
     return 'Please confirm the new email before it becomes your default login email.'
   }
+  if (/too many email-change attempts|rate.?limit|try again later/i.test(message)) {
+    return 'Too many email-change attempts. Please try again later.'
+  }
+  if (/session has expired|sign in again|reauth/i.test(message)) {
+    return 'Your session has expired. Please sign in again, then try updating your default email.'
+  }
   if (/philippine|cellphone|phone/i.test(message)) {
     return 'Please enter a valid Philippine cellphone number.'
   }

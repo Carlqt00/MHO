@@ -1891,7 +1891,21 @@ function uniqueCanonicalPhones(values: string[]): string[] {
 function profilePromotionError(error: unknown, fallback: string): Error {
   const obj = error && typeof error === 'object' ? (error as Record<string, unknown>) : null
   const code = typeof obj?.code === 'string' ? obj.code : ''
+  const status = typeof obj?.status === 'number' ? obj.status : 0
   const message = error instanceof Error ? error.message : String(error ?? '')
+  if (
+    status === 429 ||
+    /rate.?limit|too many|only request this after|over_.*rate_limit/i.test(`${code} ${message}`)
+  ) {
+    return new Error('Too many email-change attempts. Please try again later.')
+  }
+  if (
+    status === 401 ||
+    status === 403 ||
+    /reauth|session|jwt|not.?authenticated|login required|token/i.test(`${code} ${message}`)
+  ) {
+    return new Error('Your session has expired. Please sign in again, then try updating your default email.')
+  }
   if (
     code === 'email_exists' ||
     /already.*registered|already.*exists|duplicate|unique|User already registered/i.test(message)
@@ -1914,6 +1928,16 @@ function profilePromotionError(error: unknown, fallback: string): Error {
     return new Error('Please enter a valid Philippine cellphone number.')
   }
   return new Error(fallback)
+}
+
+function logDefaultEmailPromotionFailure(stage: string, error: unknown) {
+  const obj = error && typeof error === 'object' ? (error as Record<string, unknown>) : null
+  console.error('[default-email-promotion]', {
+    stage,
+    code: typeof obj?.code === 'string' ? obj.code : undefined,
+    status: typeof obj?.status === 'number' ? obj.status : undefined,
+    message: error instanceof Error ? error.message : String(error ?? ''),
+  })
 }
 
 export async function promoteDefaultPhoneContact(phone: string): Promise<PatientProfile> {
@@ -1942,6 +1966,7 @@ export async function promoteDefaultEmailContact(
   const { data: userData, error: userErr } = await supabase.auth.getUser()
   const user = userData.user
   if (userErr || !user) {
+    logDefaultEmailPromotionFailure('auth.getUser', userErr ?? new Error('missing authenticated user'))
     throw new Error('You need to be logged in to update your profile.')
   }
 
@@ -1962,6 +1987,7 @@ export async function promoteDefaultEmailContact(
       .eq('contact_value', email)
 
     if (error) {
+      logDefaultEmailPromotionFailure('profile_contacts.cleanup_already_default', error)
       throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
     }
 
@@ -1978,6 +2004,7 @@ export async function promoteDefaultEmailContact(
 
   const { data: updateData, error: updateErr } = await supabase.auth.updateUser({ email })
   if (updateErr) {
+    logDefaultEmailPromotionFailure('auth.updateUser', updateErr)
     throw profilePromotionError(updateErr, 'Could not update your default email. Please try again or contact MHO.')
   }
 
@@ -1990,6 +2017,7 @@ export async function promoteDefaultEmailContact(
 
   const { error } = await supabase.rpc('promote_default_email_contact', { p_email: email })
   if (error) {
+    logDefaultEmailPromotionFailure('rpc.promote_default_email_contact', error)
     throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
   }
 
