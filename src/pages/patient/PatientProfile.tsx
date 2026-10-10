@@ -213,6 +213,12 @@ export function PatientProfile() {
     setAdditionalPhones(nextProfile.additional_phones)
   }
 
+  const openPromotion = (nextPromotion: NonNullable<ContactPromotion>) => {
+    setEditError('')
+    setNotice('')
+    setPromotion(nextPromotion)
+  }
+
   const confirmPromotion = async () => {
     if (!promotion) return
     setSaving(true)
@@ -223,14 +229,18 @@ export function PatientProfile() {
         const result = await promoteDefaultEmailContact(promotion.value)
         applyProfileState(result.profile)
         await refreshSession()
+        setEditError('')
         setNotice(
-          result.emailConfirmationRequired
+          result.emailAlreadyDefault
+            ? 'This email is already your default email.'
+            : result.emailConfirmationRequired
             ? 'Please confirm the new email before it becomes your default login email.'
             : 'Default email updated successfully.'
         )
       } else {
         const nextProfile = await promoteDefaultPhoneContact(promotion.value)
         applyProfileState(nextProfile)
+        setEditError('')
         setNotice('Default cellphone number updated successfully.')
       }
       setPromotion(null)
@@ -460,7 +470,7 @@ export function PatientProfile() {
                             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                               <button
                                 type="button"
-                                onClick={() => setPromotion({ type: 'email', value: email })}
+                                onClick={() => openPromotion({ type: 'email', value: email })}
                                 disabled={saving}
                                 className="min-h-8 rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                               >
@@ -547,7 +557,7 @@ export function PatientProfile() {
                             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                               <button
                                 type="button"
-                                onClick={() => setPromotion({ type: 'phone', value: phone })}
+                                onClick={() => openPromotion({ type: 'phone', value: phone })}
                                 disabled={saving}
                                 className="min-h-8 rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                               >

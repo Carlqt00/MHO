@@ -1865,6 +1865,7 @@ export interface UpdateMyProfileInput {
 export interface UpdateMyProfileResult {
   profile: PatientProfile
   emailConfirmationRequired: boolean
+  emailAlreadyDefault?: boolean
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -1950,13 +1951,43 @@ export async function promoteDefaultEmailContact(
   }
 
   const currentAuthEmail = (user.email ?? '').trim().toLowerCase()
-  if (email === currentAuthEmail) {
-    throw new Error('This is already your default email.')
+  const currentProfile = await fetchMyProfile(user.id)
+  const currentProfileEmail = (currentProfile.email ?? '').trim().toLowerCase()
+
+  if (email === currentAuthEmail && email === currentProfileEmail) {
+    const { error } = await supabase
+      .from('profile_contacts')
+      .delete()
+      .eq('profile_id', user.id)
+      .eq('contact_type', 'email')
+      .eq('contact_value', email)
+
+    if (error) {
+      throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
+    }
+
+    return {
+      profile: await fetchMyProfile(user.id),
+      emailConfirmationRequired: false,
+      emailAlreadyDefault: true,
+    }
   }
 
-  const currentProfile = await fetchMyProfile(user.id)
   if (!currentProfile.additional_emails.some((additionalEmail) => additionalEmail.toLowerCase() === email)) {
     throw new Error('That additional email is no longer available. Please refresh and try again.')
+  }
+
+  if (email === currentAuthEmail) {
+    const { error } = await supabase.rpc('promote_default_email_contact', { p_email: email })
+    if (error) {
+      throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
+    }
+
+    return {
+      profile: await fetchMyProfile(user.id),
+      emailConfirmationRequired: false,
+      emailAlreadyDefault: true,
+    }
   }
 
   const { data: updateData, error: updateErr } = await supabase.auth.updateUser({ email })
