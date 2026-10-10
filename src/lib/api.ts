@@ -1950,11 +1950,10 @@ export async function promoteDefaultEmailContact(
     throw new Error('Please enter a valid email address.')
   }
 
-  const currentAuthEmail = (user.email ?? '').trim().toLowerCase()
   const currentProfile = await fetchMyProfile(user.id)
   const currentProfileEmail = (currentProfile.email ?? '').trim().toLowerCase()
 
-  if (email === currentAuthEmail && email === currentProfileEmail) {
+  if (email === currentProfileEmail) {
     const { error } = await supabase
       .from('profile_contacts')
       .delete()
@@ -1975,19 +1974,6 @@ export async function promoteDefaultEmailContact(
 
   if (!currentProfile.additional_emails.some((additionalEmail) => additionalEmail.toLowerCase() === email)) {
     throw new Error('That additional email is no longer available. Please refresh and try again.')
-  }
-
-  if (email === currentAuthEmail) {
-    const { error } = await supabase.rpc('promote_default_email_contact', { p_email: email })
-    if (error) {
-      throw profilePromotionError(error, 'Could not update your default email. Please try again or contact MHO.')
-    }
-
-    return {
-      profile: await fetchMyProfile(user.id),
-      emailConfirmationRequired: false,
-      emailAlreadyDefault: true,
-    }
   }
 
   const { data: updateData, error: updateErr } = await supabase.auth.updateUser({ email })

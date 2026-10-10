@@ -78,6 +78,9 @@ function profileUpdateErrorMessage(error: unknown): string {
   if (/valid additional email|valid email/i.test(message)) {
     return 'Please enter a valid email address.'
   }
+  if (/already your default email/i.test(message)) {
+    return 'This email is already your default email.'
+  }
   if (/already associated with another account/i.test(message)) {
     return 'This email is already associated with another account.'
   }
