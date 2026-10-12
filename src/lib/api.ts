@@ -220,7 +220,7 @@ export async function bookAppointment(slotId: string): Promise<BookingResult> {
     }
     if (raw.includes('ERR_PATIENT_OVERLAP')) {
       throw new Error(
-        'You already have another appointment that overlaps with this time. Please choose a different time.'
+        'You already have another appointment that overlaps with this time. Please choose another schedule.'
       )
     }
     throw new Error(errorMessage(error, GENERIC_ERR))
@@ -301,7 +301,7 @@ export async function rescheduleAppointment(
       throw new Error('Ito na ang kasalukuyang oras ng appointment. / That is already the current time.')
     if (raw.includes('ERR_PATIENT_OVERLAP'))
       throw new Error(
-        'You already have another appointment that overlaps with this time. Please choose a different time.'
+        'You already have another appointment that overlaps with this time. Please choose another schedule.'
       )
     if (raw.includes('ERR_FORBIDDEN'))
       throw new Error(

@@ -21,7 +21,7 @@ const CONSTRAINT_MESSAGES: Array<[RegExp, string]> = [
   ],
   [
     /no_patient_active_appointment_overlap/i,
-    'You already have another appointment that overlaps with this time. Please choose a different time.',
+    'You already have another appointment that overlaps with this time. Please choose another schedule.',
   ],
 ]
 

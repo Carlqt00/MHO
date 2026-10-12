@@ -39,7 +39,7 @@ function slotTime(iso: string) {
 }
 
 const OVERLAP_MESSAGE =
-  'You already have another appointment that overlaps with this time. Please choose a different time.'
+  'You already have another appointment that overlaps with this time. Please choose another schedule.'
 
 function intervalEnd(iso: string, durationMinutes: number) {
   return new Date(iso).getTime() + durationMinutes * 60_000

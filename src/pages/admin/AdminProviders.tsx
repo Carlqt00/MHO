@@ -803,6 +803,9 @@ function EmergencyRescheduleSection({ providers }: { providers: ProviderWithAvai
     if (/ERR_SLOT_HELD/i.test(raw)) {
       return 'Selected slot is already held for another reschedule request.'
     }
+    if (/ERR_PATIENT_OVERLAP|no_patient_active_appointment_overlap/i.test(raw)) {
+      return 'The patient already has another appointment that overlaps with this time. Please choose another schedule.'
+    }
     if (/ERR_SERVICE_MISMATCH|ERR_PROVIDER_MISMATCH|Invalid appointment or slot id/i.test(raw)) {
       return 'Please choose a different proposed date/time.'
     }
