@@ -2,6 +2,7 @@
 import { errorMessage } from './errors'
 import { toCanonicalPhilippineMobile } from './phone'
 import type { Role } from './auth'
+import type { ReportStatus, AppointmentReportRow } from './reports'
 import type { VolumeBucket } from './volume'
 
 const GENERIC_ERR =
@@ -1691,6 +1692,71 @@ export async function fetchPatientStats(from: string, to: string): Promise<Patie
     newInRange: row?.new_patients ?? 0,
     active: row?.active_patients ?? 0,
   }
+}
+
+export interface AppointmentReportFilters {
+  from: string
+  to: string
+  serviceId?: string
+  status?: ReportStatus
+}
+
+export async function fetchAppointmentReportRows(
+  filters: AppointmentReportFilters
+): Promise<AppointmentReportRow[]> {
+  let query = supabase
+    .from('appointments')
+    .select(
+      `
+      id, patient_id, provider_id, service_id, status, appointment_at, appointment_date,
+      patients!inner ( profiles!inner ( full_name ) ),
+      services!inner ( id, name ),
+      providers!inner ( id, profiles!inner ( full_name ) ),
+      queue_tickets ( ticket_number, queue_position )
+    `
+    )
+    .gte('appointment_date', filters.from)
+    .lte('appointment_date', filters.to)
+    .order('appointment_at', { ascending: true })
+    .limit(5000)
+
+  if (filters.serviceId) query = query.eq('service_id', filters.serviceId)
+  if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status)
+
+  const { data, error } = await query
+  if (error) throw new Error(errorMessage(error, GENERIC_ERR))
+
+  type RawRow = {
+    id: string
+    patient_id: string
+    provider_id: string
+    service_id: string
+    status: AppointmentReportRow['status']
+    appointment_at: string
+    appointment_date: string
+    patients: { profiles: { full_name: string } | null } | null
+    services: { id: string; name: string } | null
+    providers: { id: string; profiles: { full_name: string } | null } | null
+    queue_tickets: { ticket_number: string; queue_position: number } | { ticket_number: string; queue_position: number }[] | null
+  }
+
+  return ((data ?? []) as unknown as RawRow[]).map((row) => {
+    const ticket = Array.isArray(row.queue_tickets) ? row.queue_tickets[0] : row.queue_tickets
+    return {
+      id: row.id,
+      appointmentAt: row.appointment_at,
+      appointmentDate: row.appointment_date,
+      patient: row.patients?.profiles?.full_name ?? 'Unknown patient',
+      patientId: row.patient_id,
+      service: row.services?.name ?? 'Unknown service',
+      serviceId: row.service_id,
+      provider: row.providers?.profiles?.full_name ?? 'Unknown provider',
+      providerId: row.provider_id,
+      ticketNumber: ticket?.ticket_number ?? '',
+      queueNumber: ticket?.queue_position ?? null,
+      status: row.status,
+    }
+  })
 }
 
 // ------------------------------------------------------------
