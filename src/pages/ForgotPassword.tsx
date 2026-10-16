@@ -7,20 +7,13 @@ import {
   toCanonicalPhilippineMobile,
 } from '../lib/phone'
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const NEUTRAL_SUCCESS_MESSAGE =
   'If the information matches an account, a 6-digit code will be sent by SMS to the registered cellphone number.'
 
-function isValidEmail(value: string) {
-  return EMAIL_RE.test(value.trim())
-}
-
 export function ForgotPassword() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
-  const [emailError, setEmailError] = useState('')
   const [nameError, setNameError] = useState('')
   const [phoneError, setPhoneError] = useState('')
   const [error, setError] = useState('')
@@ -30,15 +23,6 @@ export function ForgotPassword() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
 
-    const cleanedEmail = email.trim().toLowerCase()
-    if (!cleanedEmail) {
-      setEmailError('Enter your registered email.')
-      return
-    }
-    if (!isValidEmail(cleanedEmail)) {
-      setEmailError('Mukhang mali ang email. Halimbawa: juan@gmail.com')
-      return
-    }
     if (!fullName.trim()) {
       setNameError('Enter your full name.')
       return
@@ -49,19 +33,17 @@ export function ForgotPassword() {
       return
     }
 
-    setEmailError('')
     setNameError('')
     setPhoneError('')
     setError('')
     setBusy(true)
     try {
       const result = await submitPasswordResetRequest({
-        email: cleanedEmail,
-        fullName,
+        full_name: fullName,
         phone: canonicalPhone,
       })
       if (!result.verified || !result.requestId) {
-        setError('We could not verify the account information. Please check your details or contact MHO.')
+        setError('We could not verify an account with the information provided.')
         return
       }
       if (!result.smsSent) {
@@ -104,8 +86,8 @@ export function ForgotPassword() {
             <>
               <h1 className="text-2xl font-bold text-slate-950">Forgot Password?</h1>
               <p className="mt-2 leading-7 text-slate-600">
-                Enter your account information. We will text a 6-digit code to your registered
-                cellphone number.
+                Enter your full name and registered cellphone number. We will text a 6-digit code
+                to your registered cellphone number.
               </p>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
@@ -163,29 +145,6 @@ export function ForgotPassword() {
                   {phoneError && (
                     <p id="phone-error" className="mt-1 text-sm text-red-600">
                       {phoneError}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label htmlFor="email" className="label">
-                    Registered Email
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value)
-                      if (emailError && isValidEmail(e.target.value)) setEmailError('')
-                    }}
-                    aria-invalid={emailError ? true : undefined}
-                    aria-describedby={emailError ? 'email-error' : undefined}
-                    className="form-control"
-                  />
-                  {emailError && (
-                    <p id="email-error" className="mt-1 text-sm text-red-600">
-                      {emailError}
                     </p>
                   )}
                 </div>

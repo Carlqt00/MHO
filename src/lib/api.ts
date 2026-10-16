@@ -1196,16 +1196,14 @@ export interface PasswordResetStart {
   resent?: boolean // false when a still-valid code was sent < 60 s ago
 }
 
-// Step 1 of the SMS password reset: verify name + email + phone, then the
+// Step 1 of the SMS password reset: verify name + primary phone, then the
 // Edge Function texts a 6-digit code to the registered number.
 export async function submitPasswordResetRequest(input: {
-  email: string
-  fullName: string
+  full_name: string
   phone: string
 }): Promise<PasswordResetStart> {
   const body = {
-    email: input.email.trim().toLowerCase(),
-    fullName: input.fullName.trim(),
+    full_name: input.full_name.trim(),
     phone: input.phone.trim(),
   }
   const result = await callPublicFunction<PasswordResetStart>('password-reset-request', body)

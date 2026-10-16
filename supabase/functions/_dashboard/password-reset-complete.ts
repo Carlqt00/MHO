@@ -39,7 +39,7 @@ export function hashResetCode(requestId: string, code: string): Promise<string> 
 }
 
 export function isResetCode(value: string): boolean {
-  return new RegExp(`^\d{${RESET_CODE_LENGTH}}$`).test(value)
+  return new RegExp(`^\\d{${RESET_CODE_LENGTH}}$`).test(value)
 }
 
 // ---- password-reset-complete/index.ts ----

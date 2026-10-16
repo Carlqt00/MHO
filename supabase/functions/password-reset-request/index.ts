@@ -1,5 +1,5 @@
 // Public: start a password reset. The caller proves they know the account's
-// full name + email + registered phone; if all three match ONE profile, a
+// full name + registered primary phone; if both match exactly ONE patient, a
 // 6-digit code is texted to that phone and a reset request is stored with the
 // code's hash. The code itself is NEVER returned to the browser — possession
 // of the phone is the second factor. password-reset-complete consumes it.
@@ -20,8 +20,7 @@ const CODE_TTL_MINUTES = 15
 const RESEND_COOLDOWN_SECONDS = 60
 
 interface Body {
-  email?: string
-  fullName?: string
+  full_name?: string
   phone?: string
 }
 
@@ -34,10 +33,6 @@ function json(body: unknown, status = 200): Response {
 
 function normalizeName(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
-}
-
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (match) => `\\${match}`)
 }
 
 // Uniformly random digits, leading zeros allowed. Rejection sampling keeps
@@ -63,12 +58,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = (await req.json().catch(() => ({}))) as Body
-    const email = (body.email ?? '').trim().toLowerCase()
-    const fullName = normalizeName(body.fullName ?? '')
-    const phone = normalizePhilippineMobile(body.phone ?? '') ?? ''
+    const body = (await req.json().catch(() => null)) as Body | null
+    if (!body || typeof body.full_name !== 'string' || typeof body.phone !== 'string') {
+      return json({ error: 'Full name and registered cellphone number are required.' }, 400)
+    }
+    const fullName = normalizeName(body.full_name)
+    const phone = normalizePhilippineMobile(body.phone) ?? ''
 
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !fullName || !phone) {
+    if (!fullName || !phone) {
       return json({ error: 'Valid account information is required.' }, 400)
     }
 
@@ -76,38 +73,34 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    const { data: matches, error: lookupErr } = await service
+    // profiles.phone is canonical +639XXXXXXXXX (migration 0010).
+    // Never search alternate_phone or use an email supplied by the caller.
+    const { data: matches, count, error: lookupErr } = await service
       .from('profiles')
-      .select('id, full_name, phone, email')
-      .ilike('email', escapeLikePattern(email))
-      .limit(5)
+      .select('id, full_name, phone, email', { count: 'exact' })
+      .eq('role', 'patient')
+      .eq('phone', phone)
 
     if (lookupErr) {
       console.error('password-reset-request lookup failed:', lookupErr.message)
       return json({ error: 'Could not submit the request.' }, 500)
     }
 
-    const comparisons = (matches ?? []).map((row) => ({
-      row,
-      emailMatch: (row.email ?? '').trim().toLowerCase() === email,
-      nameMatch: normalizeName(row.full_name ?? '') === fullName,
-      phoneMatch: (normalizePhilippineMobile(row.phone ?? '') ?? '') === phone,
-    }))
-
-    const matched = comparisons.find(
-      (comparison) => comparison.emailMatch && comparison.nameMatch && comparison.phoneMatch
+    const matchingPatients = (matches ?? []).filter(
+      (row) => normalizeName(row.full_name ?? '') === fullName && row.phone === phone
     )
-    const profile = matched?.row
+    // Fail closed if the API row cap truncated candidates: uniqueness is unknown.
+    const profile = count === matches?.length && matchingPatients.length === 1
+      ? matchingPatients[0]
+      : null
 
     if (!profile) {
-      console.info('password-reset-request verification mismatch:', {
-        email_match: comparisons.some((c) => c.emailMatch) || (matches ?? []).length > 0,
-        name_match: comparisons.some((c) => c.nameMatch),
-        phone_match: comparisons.some((c) => c.phoneMatch),
-        candidate_count: matches?.length ?? 0,
+      return json({
+        verified: false,
+        message: 'We could not verify an account with the information provided.',
       })
-      return json({ verified: false })
     }
+    const registeredPhone = profile.phone
 
     const now = new Date()
     const expiresAt = new Date(now.getTime() + CODE_TTL_MINUTES * 60 * 1000).toISOString()
@@ -143,7 +136,7 @@ Deno.serve(async (req) => {
         return json({
           verified: true,
           requestId: existingRequest.id,
-          phoneHint: maskPhilippineMobile(phone),
+          phoneHint: maskPhilippineMobile(registeredPhone),
           smsSent: true,
           resent: false,
         })
@@ -200,7 +193,7 @@ Deno.serve(async (req) => {
     try {
       await sendSms(service, {
         event: 'password_reset_code',
-        recipient: phone,
+        recipient: registeredPhone,
         message: `${SMS_SENDER_PREFIX}: Your password reset code is ${code}. It expires in ${CODE_TTL_MINUTES} minutes. If you did not request this, ignore this message.`,
       })
     } catch (err) {
@@ -226,7 +219,7 @@ Deno.serve(async (req) => {
       verified: true,
       requestId,
       expiresAt,
-      phoneHint: maskPhilippineMobile(phone),
+      phoneHint: maskPhilippineMobile(registeredPhone),
       smsSent,
       resent: true,
     })
