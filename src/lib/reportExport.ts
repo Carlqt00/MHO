@@ -50,9 +50,10 @@ function rowTime(iso: string): string {
   })
 }
 
-async function loadLogoDataUrl(): Promise<string | null> {
+async function loadWatermarkDataUrl(): Promise<string | null> {
   try {
     const response = await fetch(LOGO_PATH)
+    if (!response.ok) return null
     const svg = await response.text()
     const blob = new Blob([svg], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
@@ -61,15 +62,26 @@ async function loadLogoDataUrl(): Promise<string | null> {
       img.decoding = 'async'
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve()
-        img.onerror = () => reject(new Error('Logo could not be loaded.'))
+        img.onerror = () => reject(new Error('Report seal could not be loaded.'))
         img.src = url
       })
       const canvas = document.createElement('canvas')
-      canvas.width = 160
-      canvas.height = 160
+      canvas.width = 720
+      canvas.height = 720
       const ctx = canvas.getContext('2d')
       if (!ctx) return null
-      ctx.drawImage(img, 0, 0, 160, 160)
+      ctx.drawImage(img, 40, 40, 640, 640)
+      // Preserve the seal's detail by fading pale fills more than dark ink.
+      // Bake mint color and low opacity into the PNG for both export formats.
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      for (let i = 0; i < image.data.length; i += 4) {
+        const luminance = (0.2126 * image.data[i] + 0.7152 * image.data[i + 1] + 0.0722 * image.data[i + 2]) / 255
+        image.data[i + 3] = Math.round(image.data[i + 3] * (1 - luminance) * 0.08)
+        image.data[i] = 5
+        image.data[i + 1] = 150
+        image.data[i + 2] = 105
+      }
+      ctx.putImageData(image, 0, 0)
       return canvas.toDataURL('image/png')
     } finally {
       URL.revokeObjectURL(url)
@@ -82,7 +94,7 @@ async function loadLogoDataUrl(): Promise<string | null> {
 export async function exportReportPdf(data: ReportData): Promise<void> {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-  const logo = await loadLogoDataUrl()
+  const watermark = await loadWatermarkDataUrl()
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const margin = 40
@@ -91,6 +103,16 @@ export async function exportReportPdf(data: ReportData): Promise<void> {
   const muted = '#64748b'
   const border = '#d1fae5'
   let y = 42
+
+  const drawWatermark = () => {
+    if (!watermark) return
+    const size = Math.min(pageWidth * 0.8, pageHeight * 0.6)
+    doc.addImage(watermark, 'PNG', (pageWidth - size) / 2, (pageHeight - size) / 2, size, size)
+  }
+  // Paint first on the initial page and every added page, behind all text,
+  // tables, charts and footers. The PNG itself already has low opacity.
+  drawWatermark()
+  doc.internal.events.subscribe('addPage', drawWatermark)
 
   const addFooter = () => {
     const pages = doc.getNumberOfPages()
@@ -134,17 +156,16 @@ export async function exportReportPdf(data: ReportData): Promise<void> {
     doc.text(value, x, top + 14)
   }
 
-  if (logo) doc.addImage(logo, 'PNG', margin, y - 4, 54, 54)
   doc.setTextColor(text)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(20)
-  doc.text('MHO Daraga', margin + 66, y + 8)
+  doc.text('MHO Daraga', margin, y + 8)
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
-  doc.text('Municipal Health Office', margin + 66, y + 24)
+  doc.text('Municipal Health Office', margin, y + 24)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
-  doc.text('Appointment Report', margin + 66, y + 46)
+  doc.text('Appointment Report', margin, y + 46)
   y += 78
 
   const metaTop = y
@@ -393,30 +414,19 @@ export async function exportReportExcel(data: ReportData): Promise<void> {
     views: [{ state: 'frozen', ySplit: 9 }],
   })
   summary.columns = [{ width: 24 }, { width: 18 }, { width: 24 }, { width: 36 }]
-  summary.mergeCells('A1:B4')
-  summary.mergeCells('C1:D1')
-  summary.mergeCells('C2:D2')
-  summary.mergeCells('C3:D3')
+  summary.mergeCells('A1:D1')
+  summary.mergeCells('A2:D2')
+  summary.mergeCells('A3:D3')
   summary.getRow(1).height = 28
   summary.getRow(2).height = 20
   summary.getRow(3).height = 24
   summary.getRow(4).height = 12
-  summary.getCell('C1').value = 'MHO Daraga'
-  summary.getCell('C1').font = { bold: true, size: 18, color: { argb: 'FF0F172A' } }
-  summary.getCell('C2').value = 'Municipal Health Office'
-  summary.getCell('C2').font = { size: 11, color: { argb: 'FF475569' } }
-  summary.getCell('C3').value = 'Appointment Report'
-  summary.getCell('C3').font = { bold: true, size: 14, color: { argb: 'FF047857' } }
-
-  const logo = await loadLogoDataUrl()
-  if (logo) {
-    const imageId = wb.addImage({ base64: logo, extension: 'png' })
-    summary.addImage(imageId, {
-      tl: { col: 0.25, row: 0.25 },
-      ext: { width: 78, height: 78 },
-      editAs: 'oneCell',
-    })
-  }
+  summary.getCell('A1').value = 'MHO Daraga'
+  summary.getCell('A1').font = { bold: true, size: 18, color: { argb: 'FF0F172A' } }
+  summary.getCell('A2').value = 'Municipal Health Office'
+  summary.getCell('A2').font = { size: 11, color: { argb: 'FF475569' } }
+  summary.getCell('A3').value = 'Appointment Report'
+  summary.getCell('A3').font = { bold: true, size: 14, color: { argb: 'FF047857' } }
 
   summary.addRows([
     [],
@@ -498,6 +508,47 @@ export async function exportReportExcel(data: ReportData): Promise<void> {
     ],
     [22, 22]
   )
+
+  const watermark = await loadWatermarkDataUrl()
+  if (watermark) {
+    const imageId = wb.addImage({ base64: watermark, extension: 'png' })
+    wb.eachSheet((worksheet) => {
+      // Excel backgrounds tile. Use one square PNG with opacity baked in,
+      // centered over the used columns and report height instead.
+      const widths = worksheet.columns.map((column) => Math.floor((column.width ?? 8.43) * 7 + 5))
+      const heights = Array.from({ length: worksheet.rowCount }, (_, i) =>
+        (worksheet.getRow(i + 1).height ?? worksheet.properties.defaultRowHeight) * 96 / 72
+      )
+      const width = widths.reduce((total, value) => total + value, 0)
+      const height = Math.max(400, heights.reduce((total, value) => total + value, 0))
+      const size = Math.min(520, width * 0.8, height * 0.8)
+      let left = (width - size) / 2
+      let top = (height - size) / 2
+      let col = 0
+      let row = 0
+      while (col < widths.length - 1 && left >= widths[col]) {
+        left -= widths[col]
+        col += 1
+      }
+      const defaultHeight = worksheet.properties.defaultRowHeight * 96 / 72
+      while (top >= (heights[row] ?? defaultHeight)) {
+        top -= heights[row] ?? defaultHeight
+        row += 1
+      }
+      // Native offsets use EMUs (9,525 per pixel), avoiding ExcelJS's
+      // fractional-column conversion for custom column widths.
+      const tl = {
+        col, row, nativeCol: col, nativeRow: row,
+        nativeColOff: Math.round(left * 9525),
+        nativeRowOff: Math.round(top * 9525),
+      }
+      worksheet.addImage(imageId, {
+        tl,
+        ext: { width: size, height: size },
+        editAs: 'absolute',
+      })
+    })
+  }
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
